@@ -40,12 +40,8 @@ def get_sonic_balance(agent, **kwargs):
         
         if not address:
             connection: SonicConnection = agent.connection_manager.connections["sonic"]
-            connection.address
-            load_dotenv()
-            private_key = os.getenv('SONIC_PRIVATE_KEY')
-            web3 = agent.connection_manager.connections["sonic"]._web3
-            account = web3.eth.account.from_key(private_key)
-            address = account.address
+            address = connection.get_address()
+           
 
         # Direct passthrough to connection method - add your logic before/after this call!
         agent.connection_manager.connections["sonic"].get_balance(
