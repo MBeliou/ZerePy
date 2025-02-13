@@ -2,6 +2,7 @@ import logging
 import os
 from dotenv import load_dotenv
 from src.action_handler import register_action
+from src.connections.sonic_connection import SonicConnection
 
 logger = logging.getLogger("actions.sonic_actions")
 
@@ -38,6 +39,8 @@ def get_sonic_balance(agent, **kwargs):
         token_address = kwargs.get("token_address")
         
         if not address:
+            connection: SonicConnection = agent.connection_manager.connections["sonic"]
+            connection.address
             load_dotenv()
             private_key = os.getenv('SONIC_PRIVATE_KEY')
             web3 = agent.connection_manager.connections["sonic"]._web3

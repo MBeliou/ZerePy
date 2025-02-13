@@ -1,9 +1,9 @@
 import logging
-import os
-from dotenv import load_dotenv
 from src.action_handler import register_action
+from src.connections.ethereum_connection import EthereumConnection
 
 logger = logging.getLogger("actions.ethereum_actions")
+
 
 @register_action("get-token-by-ticker")
 def get_token_by_ticker(agent, **kwargs):
@@ -13,47 +13,48 @@ def get_token_by_ticker(agent, **kwargs):
         if not ticker:
             logger.error("No ticker provided")
             return None
-            
+
         token_address = agent.connection_manager.connections["ethereum"].get_token_by_ticker(ticker)
-        
+
         if token_address:
             logger.info(f"Found token address for {ticker}: {token_address}")
         else:
             logger.info(f"No token found for ticker {ticker}")
-            
+
         return token_address
 
     except Exception as e:
         logger.error(f"Failed to get token by ticker: {str(e)}")
         return None
 
+
 @register_action("get-eth-balance")
 def get_eth_balance(agent, **kwargs):
     """Get native or token balance"""
     try:
+        address = kwargs.get("address")
         token_address = kwargs.get("token_address")
-        
-        load_dotenv()
-        private_key = os.getenv('ETH_PRIVATE_KEY')
-        web3 = agent.connection_manager.connections["ethereum"]._web3
-        account = web3.eth.account.from_key(private_key)
-        address = account.address
+
+        connection: EthereumConnection = agent.connection_manager.connections["ethereum"]
+        if not address:
+            address = connection.get_address()
 
         balance = agent.connection_manager.connections["ethereum"].get_balance(
             address=address,
             token_address=token_address
         )
-        
+
         if token_address:
             logger.info(f"Token Balance: {balance}")
         else:
             logger.info(f"Native Token Balance: {balance}")
-            
+
         return balance
 
     except Exception as e:
         logger.error(f"Failed to get balance: {str(e)}")
         return None
+
 
 @register_action("send-eth")
 def send_eth(agent, **kwargs):
@@ -74,6 +75,7 @@ def send_eth(agent, **kwargs):
     except Exception as e:
         logger.error(f"Failed to send native tokens: {str(e)}")
         return None
+
 
 @register_action("send-eth-token")
 def send_eth_token(agent, **kwargs):
@@ -96,6 +98,7 @@ def send_eth_token(agent, **kwargs):
     except Exception as e:
         logger.error(f"Failed to send tokens: {str(e)}")
         return None
+
 
 @register_action("get-address")
 def get_address(agent, **kwargs):

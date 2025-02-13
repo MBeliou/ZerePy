@@ -17,26 +17,8 @@ class SonicConnectionError(Exception):
     """Base exception for Sonic connection errors"""
     pass
 
+
 class SonicConnection(BaseConnection):
-    
-    def __init__(self, config: Dict[str, Any]):
-        logger.info("Initializing Sonic connection...")
-        self._web3 = None
-        
-        # Get network configuration
-        network = config.get("network", "mainnet")
-        if network not in SONIC_NETWORKS:
-            raise ValueError(f"Invalid network '{network}'. Must be one of: {', '.join(SONIC_NETWORKS.keys())}")
-            
-        network_config = SONIC_NETWORKS[network]
-        self.explorer = network_config["scanner_url"]
-        self.rpc_url = network_config["rpc_url"]
-        
-        super().__init__(config)
-        self._initialize_web3()
-        self.ERC20_ABI = ERC20_ABI
-        self.NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
-        self.aggregator_api = "https://aggregator-api.kyberswap.com/sonic/api/v1"
 
     def _get_explorer_link(self, tx_hash: str) -> str:
         """Generate block explorer link for transaction"""
@@ -49,7 +31,7 @@ class SonicConnection(BaseConnection):
             self._web3.middleware_onion.inject(geth_poa_middleware, layer=0)
             if not self._web3.is_connected():
                 raise SonicConnectionError("Failed to connect to Sonic network")
-            
+
             try:
                 chain_id = self._web3.eth.chain_id
                 logger.info(f"Connected to network with chain ID: {chain_id}")
@@ -62,14 +44,15 @@ class SonicConnection(BaseConnection):
 
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate Sonic configuration from JSON"""
-        required = ["network"]
+        required = ["network", "private_key"]
         missing = [field for field in required if field not in config]
         if missing:
             raise ValueError(f"Missing config fields: {', '.join(missing)}")
-        
+
         if config["network"] not in SONIC_NETWORKS:
-            raise ValueError(f"Invalid network '{config['network']}'. Must be one of: {', '.join(SONIC_NETWORKS.keys())}")
-            
+            raise ValueError(
+                f"Invalid network '{config['network']}'. Must be one of: {', '.join(SONIC_NETWORKS.keys())}")
+
         return config
 
     def get_token_by_ticker(self, ticker: str) -> Optional[str]:
@@ -77,7 +60,7 @@ class SonicConnection(BaseConnection):
         try:
             if ticker.lower() in ["s", "S"]:
                 return "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
-                
+
             response = requests.get(
                 f"https://api.dexscreener.com/latest/dex/search?q={ticker}"
             )
@@ -144,7 +127,11 @@ class SonicConnection(BaseConnection):
             )
         }
 
-    def configure(self) -> bool:
+    def configure(self, **kwargs) -> bool:
+        return True
+
+    def configure_old(self) -> bool:
+
         logger.info("\n🔷 SONIC CHAIN SETUP")
         if self.is_configured():
             logger.info("Sonic connection is already configured")
@@ -173,58 +160,13 @@ class SonicConnection(BaseConnection):
             logger.error(f"Configuration failed: {e}")
             return False
 
-    def is_configured(self, verbose: bool = False) -> bool:
-        try:
-            load_dotenv()
-            if not os.getenv('SONIC_PRIVATE_KEY'):
-                if verbose:
-                    logger.error("Missing SONIC_PRIVATE_KEY in .env")
-                return False
-
-            if not self._web3.is_connected():
-                if verbose:
-                    logger.error("Not connected to Sonic network")
-                return False
-            return True
-
-        except Exception as e:
-            if verbose:
-                logger.error(f"Configuration check failed: {e}")
-            return False
-
-    def get_balance(self, address: Optional[str] = None, token_address: Optional[str] = None) -> float:
-        """Get balance for an address or the configured wallet"""
-        try:
-            if not address:
-                private_key = os.getenv('SONIC_PRIVATE_KEY')
-                if not private_key:
-                    raise SonicConnectionError("No wallet configured")
-                account = self._web3.eth.account.from_key(private_key)
-                address = account.address
-
-            if token_address:
-                contract = self._web3.eth.contract(
-                    address=Web3.to_checksum_address(token_address),
-                    abi=self.ERC20_ABI
-                )
-                balance = contract.functions.balanceOf(address).call()
-                decimals = contract.functions.decimals().call()
-                return balance / (10 ** decimals)
-            else:
-                balance = self._web3.eth.get_balance(address)
-                return self._web3.from_wei(balance, 'ether')
-
-        except Exception as e:
-            logger.error(f"Failed to get balance: {e}")
-            raise
-
     def transfer(self, to_address: str, amount: float, token_address: Optional[str] = None) -> str:
         """Transfer $S or tokens to an address"""
         try:
             private_key = os.getenv('SONIC_PRIVATE_KEY')
             account = self._web3.eth.account.from_key(private_key)
             chain_id = self._web3.eth.chain_id
-            
+
             if token_address:
                 contract = self._web3.eth.contract(
                     address=Web3.to_checksum_address(token_address),
@@ -232,7 +174,7 @@ class SonicConnection(BaseConnection):
                 )
                 decimals = contract.functions.decimals().call()
                 amount_raw = int(amount * (10 ** decimals))
-                
+
                 tx = contract.functions.transfer(
                     Web3.to_checksum_address(to_address),
                     amount_raw
@@ -267,7 +209,7 @@ class SonicConnection(BaseConnection):
         """Get the best swap route from Kyberswap API"""
         try:
             # Handle native token address
-            
+
             # Convert amount to raw value
             if token_in.lower() == self.NATIVE_TOKEN.lower():
                 amount_raw = self._web3.to_wei(amount_in, 'ether')
@@ -278,7 +220,7 @@ class SonicConnection(BaseConnection):
                 )
                 decimals = token_contract.functions.decimals().call()
                 amount_raw = int(amount_in * (10 ** decimals))
-            
+
             # Set up API request
             url = f"{self.aggregator_api}/routes"
             headers = {"x-client-id": "ZerePyBot"}
@@ -288,16 +230,16 @@ class SonicConnection(BaseConnection):
                 "amountIn": str(amount_raw),
                 "gasInclude": "true"
             }
-            
+
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
-            
+
             data = response.json()
             if data.get("code") != 0:
                 raise SonicConnectionError(f"API error: {data.get('message')}")
-                
+
             return data["data"]
-                
+
         except Exception as e:
             logger.error(f"Failed to get swap route: {e}")
             raise
@@ -307,10 +249,10 @@ class SonicConnection(BaseConnection):
         try:
             private_key = os.getenv('SONIC_PRIVATE_KEY')
             account = self._web3.eth.account.from_key(private_key)
-            
+
             url = f"{self.aggregator_api}/route/build"
             headers = {"x-client-id": "zerepy"}
-            
+
             payload = {
                 "routeSummary": route_summary,
                 "sender": account.address,
@@ -319,37 +261,37 @@ class SonicConnection(BaseConnection):
                 "deadline": int(time.time() + 1200),  # 20 minutes
                 "source": "ZerePyBot"
             }
-            
+
             response = requests.post(url, headers=headers, json=payload)
             response.raise_for_status()
-            
+
             data = response.json()
             if data.get("code") != 0:
                 raise SonicConnectionError(f"API error: {data.get('message')}")
-                
+
             return data["data"]["data"]
-                
+
         except Exception as e:
             logger.error(f"Failed to encode swap data: {e}")
             raise
-    
+
     def _handle_token_approval(self, token_address: str, spender_address: str, amount: int) -> None:
         """Handle token approval for spender"""
         try:
             private_key = os.getenv('SONIC_PRIVATE_KEY')
             account = self._web3.eth.account.from_key(private_key)
-            
+
             token_contract = self._web3.eth.contract(
                 address=Web3.to_checksum_address(token_address),
                 abi=self.ERC20_ABI
             )
-            
+
             # Check current allowance
             current_allowance = token_contract.functions.allowance(
                 account.address,
                 spender_address
             ).call()
-            
+
             if current_allowance < amount:
                 approve_tx = token_contract.functions.approve(
                     spender_address,
@@ -360,91 +302,25 @@ class SonicConnection(BaseConnection):
                     'gasPrice': self._web3.eth.gas_price,
                     'chainId': self._web3.eth.chain_id
                 })
-                
+
                 signed_approve = account.sign_transaction(approve_tx)
                 tx_hash = self._web3.eth.send_raw_transaction(signed_approve.rawTransaction)
                 logger.info(f"Approval transaction sent: {self._get_explorer_link(tx_hash.hex())}")
-                
+
                 # Wait for approval to be mined
                 self._web3.eth.wait_for_transaction_receipt(tx_hash)
-                
+
         except Exception as e:
             logger.error(f"Approval failed: {e}")
             raise
 
-    def swap(self, token_in: str, token_out: str, amount: float, slippage: float = 0.5) -> str:
-        """Execute a token swap using the KyberSwap router"""
-        try:
-            private_key = os.getenv('SONIC_PRIVATE_KEY')
-            account = self._web3.eth.account.from_key(private_key)
-
-            # Check token balance before proceeding
-            current_balance = self.get_balance(
-                address=account.address,
-                token_address=None if token_in.lower() == self.NATIVE_TOKEN.lower() else token_in
-            )
-            
-            if current_balance < amount:
-                raise ValueError(f"Insufficient balance. Required: {amount}, Available: {current_balance}")
-                
-            # Get optimal swap route
-            route_data = self._get_swap_route(token_in, token_out, amount)
-            
-            # Get encoded swap data
-            encoded_data = self._get_encoded_swap_data(route_data["routeSummary"], slippage)
-            
-            # Get router address from route data
-            router_address = route_data["routerAddress"]
-            
-            # Handle token approval if not using native token
-            if token_in.lower() != self.NATIVE_TOKEN.lower():
-                if token_in.lower() == "0x039e2fb66102314ce7b64ce5ce3e5183bc94ad38".lower():  # $S token
-                    amount_raw = self._web3.to_wei(amount, 'ether')
-                else:
-                    token_contract = self._web3.eth.contract(
-                        address=Web3.to_checksum_address(token_in),
-                        abi=self.ERC20_ABI
-                    )
-                    decimals = token_contract.functions.decimals().call()
-                    amount_raw = int(amount * (10 ** decimals))
-                self._handle_token_approval(token_in, router_address, amount_raw)
-            
-            # Prepare transaction
-            tx = {
-                'from': account.address,
-                'to': Web3.to_checksum_address(router_address),
-                'data': encoded_data,
-                'nonce': self._web3.eth.get_transaction_count(account.address),
-                'gasPrice': self._web3.eth.gas_price,
-                'chainId': self._web3.eth.chain_id,
-                'value': self._web3.to_wei(amount, 'ether') if token_in.lower() == self.NATIVE_TOKEN.lower() else 0
-            }
-            
-            # Estimate gas
-            try:
-                tx['gas'] = self._web3.eth.estimate_gas(tx)
-            except Exception as e:
-                logger.warning(f"Gas estimation failed: {e}, using default gas limit")
-                tx['gas'] = 500000  # Default gas limit
-            
-            # Sign and send transaction
-            signed_tx = account.sign_transaction(tx)
-            tx_hash = self._web3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            
-            # Log and return explorer link immediately
-            tx_link = self._get_explorer_link(tx_hash.hex())
-            return f"🔄 Swap transaction sent: {tx_link}"
-                
-        except Exception as e:
-            logger.error(f"Swap failed: {e}")
-            raise
-    def perform_action(self, action_name: str, kwargs) -> Any:
+    def perform_action(self, action_name: str, kwargs: Dict[str, Any]) -> Any:
         """Execute a Sonic action with validation"""
         if action_name not in self.actions:
             raise KeyError(f"Unknown action: {action_name}")
 
         load_dotenv()
-        
+
         if not self.is_configured(verbose=True):
             raise SonicConnectionError("Sonic is not properly configured")
 
@@ -456,3 +332,164 @@ class SonicConnection(BaseConnection):
         method_name = action_name.replace('-', '_')
         method = getattr(self, method_name)
         return method(**kwargs)
+
+    # sonic_connection.py
+    def __init__(self, config: Dict[str, Any]):
+        logger.info("Initializing Sonic connection...")
+        self._web3 = None
+        self.config = config
+
+        self.private_key = config.get("private_key")
+        network = config.get("network", "mainnet")
+
+        if network not in SONIC_NETWORKS:
+            raise ValueError(f"Invalid network '{network}'. Must be one of: {', '.join(SONIC_NETWORKS.keys())}")
+
+        network_config = SONIC_NETWORKS[network]
+        self.explorer = network_config["scanner_url"]
+        self.rpc_url = network_config["rpc_url"]
+
+        super().__init__(config)
+        self._initialize_web3()
+
+        self.ERC20_ABI = ERC20_ABI
+        self.NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+        self.aggregator_api = "https://aggregator-api.kyberswap.com/sonic/api/v1"
+
+    def is_configured(self, verbose: bool = False) -> bool:
+        try:
+            if not self.private_key:
+                if verbose:
+                    logger.error("Missing private key in config")
+                return False
+
+            if not self._web3.is_connected():
+                if verbose:
+                    logger.error("Not connected to Sonic network")
+                return False
+            return True
+
+        except Exception as e:
+            if verbose:
+                logger.error(f"Configuration check failed: {e}")
+            return False
+
+    def get_address(self) -> str:
+        try:
+            account = self._web3.eth.account.from_key(self.private_key)
+            return f"Your Ethereum address: {account.address}"
+        except Exception as e:
+            return f"Failed to get address: {str(e)}"
+
+    def get_balance(self, address: Optional[str] = None, token_address: Optional[str] = None) -> float:
+        try:
+            if not address:
+                account = self._web3.eth.account.from_key(self.private_key)
+                address = account.address
+
+            if token_address:
+                contract = self._web3.eth.contract(
+                    address=Web3.to_checksum_address(token_address),
+                    abi=self.ERC20_ABI
+                )
+                balance = contract.functions.balanceOf(address).call()
+                decimals = contract.functions.decimals().call()
+                return balance / (10 ** decimals)
+            else:
+                balance = self._web3.eth.get_balance(address)
+                return self._web3.from_wei(balance, 'ether')
+
+        except Exception as e:
+            logger.error(f"Failed to get balance: {e}")
+            raise
+
+    def transfer(self, to_address: str, amount: float, token_address: Optional[str] = None) -> str:
+        try:
+            account = self._web3.eth.account.from_key(self.private_key)
+            chain_id = self._web3.eth.chain_id
+
+            if token_address:
+                contract = self._web3.eth.contract(
+                    address=Web3.to_checksum_address(token_address),
+                    abi=self.ERC20_ABI
+                )
+                decimals = contract.functions.decimals().call()
+                amount_raw = int(amount * (10 ** decimals))
+
+                tx = contract.functions.transfer(
+                    Web3.to_checksum_address(to_address),
+                    amount_raw
+                ).build_transaction({
+                    'from': account.address,
+                    'nonce': self._web3.eth.get_transaction_count(account.address),
+                    'gasPrice': self._web3.eth.gas_price,
+                    'chainId': chain_id
+                })
+            else:
+                tx = {
+                    'nonce': self._web3.eth.get_transaction_count(account.address),
+                    'to': Web3.to_checksum_address(to_address),
+                    'value': self._web3.to_wei(amount, 'ether'),
+                    'gas': 21000,
+                    'gasPrice': self._web3.eth.gas_price,
+                    'chainId': chain_id
+                }
+
+            signed = account.sign_transaction(tx)
+            tx_hash = self._web3.eth.send_raw_transaction(signed.rawTransaction)
+            return f"⛓️ Transfer transaction sent: {self._get_explorer_link(tx_hash.hex())}"
+
+        except Exception as e:
+            logger.error(f"Transfer failed: {e}")
+            raise
+
+    def swap(self, token_in: str, token_out: str, amount: float, slippage: float = 0.5) -> str:
+        try:
+            account = self._web3.eth.account.from_key(self.private_key)
+
+            current_balance = self.get_balance(
+                address=account.address,
+                token_address=None if token_in.lower() == self.NATIVE_TOKEN.lower() else token_in
+            )
+
+            if current_balance < amount:
+                raise ValueError(f"Insufficient balance. Required: {amount}, Available: {current_balance}")
+
+            route_data = self._get_swap_route(token_in, token_out, amount)
+            encoded_data = self._get_encoded_swap_data(route_data["routeSummary"], slippage)
+            router_address = route_data["routerAddress"]
+
+            if token_in.lower() != self.NATIVE_TOKEN.lower():
+                amount_raw = self._web3.to_wei(amount, 'ether')
+                if token_in.lower() != "0x039e2fb66102314ce7b64ce5ce3e5183bc94ad38".lower():
+                    token_contract = self._web3.eth.contract(
+                        address=Web3.to_checksum_address(token_in),
+                        abi=self.ERC20_ABI
+                    )
+                    decimals = token_contract.functions.decimals().call()
+                    amount_raw = int(amount * (10 ** decimals))
+                self._handle_token_approval(token_in, router_address, amount_raw)
+
+            tx = {
+                'from': account.address,
+                'to': Web3.to_checksum_address(router_address),
+                'data': encoded_data,
+                'nonce': self._web3.eth.get_transaction_count(account.address),
+                'gasPrice': self._web3.eth.gas_price,
+                'chainId': self._web3.eth.chain_id,
+                'value': self._web3.to_wei(amount, 'ether') if token_in.lower() == self.NATIVE_TOKEN.lower() else 0
+            }
+
+            try:
+                tx['gas'] = self._web3.eth.estimate_gas(tx)
+            except Exception as e:
+                logger.warning(f"Gas estimation failed: {e}, using default gas limit")
+                tx['gas'] = 500000
+
+            signed_tx = account.sign_transaction(tx)
+            tx_hash = self._web3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            return f"🔄 Swap transaction sent: {self._get_explorer_link(tx_hash.hex())}"
+
+        except Exception as e:
+            logger.error(f"Swap failed: {e}")
+            raise
