@@ -41,7 +41,7 @@ def get_sonic_balance(agent, **kwargs):
         if not address:
             connection: SonicConnection = agent.connection_manager.connections["sonic"]
             address = connection.get_address()
-           
+
 
         # Direct passthrough to connection method - add your logic before/after this call!
         agent.connection_manager.connections["sonic"].get_balance(
