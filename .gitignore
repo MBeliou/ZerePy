@@ -13,7 +13,7 @@ agents/*.json
 
 # Include example agent and general config
 !default_agents/example.json
-!general.json
+!agents/general.json
 
 # macOS
 .DS_Store

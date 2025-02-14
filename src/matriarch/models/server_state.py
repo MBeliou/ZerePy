@@ -18,7 +18,7 @@ class ServerState:
 
     def _load_agents(self):
         agents = {}
-        for config_file in self.config_dir.glob("*.json"):
+        for config_file in filter(lambda x: x.stem != "general", self.config_dir.glob("*.json")):
             try:
                 with open(config_file, "r") as f:
                     config_data = json.load(f)
