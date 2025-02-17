@@ -2,7 +2,7 @@ import json
 import threading
 from pathlib import Path
 
-from typing import Dict, List, Optional, final
+from typing import Dict, List, Optional, final, IO
 import logging
 
 from src.agent import ZerePyAgent
@@ -30,20 +30,27 @@ class ServerState:
                     # print(config_data)
                     agent_config = AgentConfig(**config_data)
 
-                    agents[agent_config] = agent_config
+                    agents[self._make_safe_agent_name(config_data["name"])] = agent_config
 
             except Exception as e:
                 logger.error(f"Error loading {config_file}: {e}")
+
         return agents
 
-    def _save_agent(self, config: AgentConfig):
+    def _save_agent_config(self, config: AgentConfig):
         exists = any(f"{config.name}.json" for f in self.config_dir.glob("*.json"))
 
     def add_agent(self, agent: AgentConfig):
-        self.agent_configs[agent.id] = agent
+        safe_name = self._make_safe_agent_name(agent.name)
+        config_path = self._make_agent_file_path(safe_name)
+        with open(config_path, "w") as f:
+            json.dump(agent.model_dump(), f, indent=2)
+
+        self.agent_configs[safe_name] = agent
 
     def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
-        return self.agent_configs.get(agent_id)
+        safe_name = self._make_safe_agent_name(agent_id)
+        return self.agent_configs.get(safe_name)
 
     def get_all_agents(self) -> List[AgentConfig]:
         return list(self.agent_configs.values())
@@ -68,26 +75,32 @@ class ServerState:
         return True
 
     @staticmethod
+    def _make_safe_agent_name(agent_name: str):
+        return agent_name.replace(' ', '_').lower()
+
+    @staticmethod
     def _make_agent_file_name(agent_name: str):
-        return f"{agent_name.replace(' ', '_').lower()}.json"
+        return f"{ServerState._make_safe_agent_name(agent_name)}.json"
 
     def _make_agent_file_path(self, agent_name: str):
         return self.config_dir / self._make_agent_file_name(agent_name)
 
     def start_agent(self, agent_name: str) -> bool:
         # Make sure agent config actually exists
-        agent = self.agent_configs.get(agent_name)
+        safe_name = self._make_safe_agent_name(agent_name)
+        agent = self.agent_configs.get(safe_name)
         if agent is None:
             return False
 
         # Make sure it isn't already running
-        agent_loop = self.agent_loops.get(agent_name)
+        agent_loop = self.agent_loops.get(safe_name)
         if agent_loop is not None:
-            return False
+            if agent_loop.is_running:
+                return False
 
         try:
             agent = ZerePyAgent(agent_name)
-            self.agent_loops[agent_name] = AgentController(agent)
+            self.agent_loops[safe_name] = AgentController(agent)
 
             return True
 

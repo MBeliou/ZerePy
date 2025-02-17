@@ -11,14 +11,15 @@ async def get_agents(server_state: ServerState = Depends(get_server_state)):
     return server_state.get_all_agents()
 
 
-@router.get("/{agent_id}")
+@router.get("/{agent_name}")
 async def get_agent(
-        agent_id: str,
+        agent_name: str,
         server_state: ServerState = Depends(get_server_state)
 ):
-    agent = server_state.get_agent(agent_id)
+    print(agent_name)
+    agent = server_state.get_agent(agent_name)
     if agent is None:
-        return {"error": "Agent not found"}
+        return {"error": f"Agent {agent_name} not found"}
     return agent
 
 
@@ -27,22 +28,31 @@ async def create_agent(
         agent: AgentConfig,
         server_state: ServerState = Depends(get_server_state)
 ):
+    if server_state.get_agent(agent.name):
+        raise HTTPException(status_code=400, detail="Agent already exists")
     server_state.add_agent(agent)
     return agent
 
-@router.post("/{agent_id}/configure")
+
+@router.post("/{agent_name}/configure")
 async def configure_agent():
     raise HTTPException(status_code=501, detail="Can't configure agents yet")
 
 
 # Actions
 
-@router.post("/{agent_id}/start")
-async def start_agent():
+@router.post("/{agent_name}/start")
+async def start_agent(agent_name: str, server_state: ServerState = Depends(get_server_state)):
+    if server_state.get_agent(agent_id=agent_name):
+        success = server_state.start_agent(agent_name)
+        if success:
+            return {"status": "success"}
+        else:
+            raise HTTPException(status_code=500, detail="Couldn't start agent")
+    else:
+        raise HTTPException(status_code=404, detail="Couldn't find agent")
+
+
+@router.post("/{agent_name}/stop")
+async def stop_agent(agent_name: str, server_state: ServerState = Depends(get_server_state)):
     raise HTTPException(status_code=501, detail="Can't start agents yet")
-
-
-
-@router.post("/{agent_id}/stop")
-async def start_agent():
-    raise HTTPException(status_code=501, detail="Can't stop agents yet")
