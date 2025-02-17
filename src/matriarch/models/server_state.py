@@ -1,9 +1,12 @@
 import json
 import threading
+import time
 from pathlib import Path
 
 from typing import Dict, List, Optional, final, IO
 import logging
+
+import asyncio
 
 from src.agent import ZerePyAgent
 from src.matriarch.models.configuration import AgentConfig
@@ -85,93 +88,133 @@ class ServerState:
     def _make_agent_file_path(self, agent_name: str):
         return self.config_dir / self._make_agent_file_name(agent_name)
 
-    def start_agent(self, agent_name: str) -> bool:
+    async def start_agent(self, agent_name: str) -> bool:
+        logger.info(f"Attempting to start agent: {agent_name}")
+
         # Make sure agent config actually exists
         safe_name = self._make_safe_agent_name(agent_name)
         agent = self.agent_configs.get(safe_name)
         if agent is None:
+            logger.error(f"No config found for agent: {safe_name}")
             return False
 
         # Make sure it isn't already running
         agent_loop = self.agent_loops.get(safe_name)
         if agent_loop is not None:
-            if agent_loop.is_running:
+            is_running = await agent_loop.is_running()
+            if is_running:
+                logger.info(f"Agent {safe_name} is already running")
                 return False
 
         try:
+            logger.info(f"Creating new agent and controller for {safe_name}")
             agent = ZerePyAgent(agent_name)
-            self.agent_loops[safe_name] = AgentController(agent)
+            controller = AgentController(agent)
+            self.agent_loops[safe_name] = controller
 
+            logger.info(f"Starting agent loop for {safe_name}")
+            await controller.start_agent_loop()
+
+            logger.info(f"Successfully started agent {safe_name}")
             return True
 
         except Exception as e:
-            logger.error(f"Couldn't start agent loop: {e}")
+            logger.error(f"Couldn't start agent loop for {safe_name}: {e}", exc_info=True)
             return False
+
+    async def stop_agent(self, agent_name: str) -> bool:
+        safe_name = self._make_safe_agent_name(agent_name)
+        agent_loop = self.agent_loops.get(safe_name)
+
+        if agent_loop is not None:
+            await agent_loop.stop_agent_loop()
+            return True
+
+        return True
 
 
 class AgentController:
-    def __init__(self, agent: ZerePyAgent):
+    def __init__(self, agent: "ZerePyAgent"):
         if agent is None:
             raise ValueError("Agent cannot be None")
         self.agent: final = agent
 
-        self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._running_lock = threading.Lock()
+        self._stop_event = asyncio.Event()
+        self._task: Optional[asyncio.Task] = None
+        self._running_lock = asyncio.Lock()
 
-    @property
-    def is_running(self) -> bool:
-        """Thread-safe way to check if the agent loop is running"""
-        with self._running_lock:
-            return self._thread is not None and self._thread.is_alive()
+    async def is_running(self) -> bool:
+        """Check if the agent loop is running"""
+        return self._task is not None and not self._task.done()
 
-    def _run_agent_loop(self):
-        """Run agent loop in a separate thread"""
+    async def _run_agent_loop(self):
+        """Run agent loop in asyncio task"""
         try:
+            logger.info(f"Agent loop starting for {self.agent.name}")
             while not self._stop_event.is_set():
                 try:
-                    # Agent loop logic here
-                    logger.info("Loop iteration")
+                    logger.info(f"Loop iteration for {self.agent.name}")
+                    logger.info(f"Stop event status: {self._stop_event.is_set()}")
 
-                    # Add a small sleep to prevent tight loop
-                    if self._stop_event.wait(timeout=0.1):
+                    try:
+                        await asyncio.wait_for(self._stop_event.wait(), timeout=0.1)
+                        logger.info(f"Stop event detected for {self.agent.name}")
                         break
+                    except asyncio.TimeoutError:
+                        pass
 
                 except Exception as e:
-                    logger.error(f"Error in agent action: {e}")
-                    if self._stop_event.wait(timeout=5):
+                    logger.error(f"Error in agent action for {self.agent.name}: {e}")
+                    try:
+                        await asyncio.wait_for(self._stop_event.wait(), timeout=5)
+                        logger.info(f"Stop event detected during error recovery for {self.agent.name}")
                         break
+                    except asyncio.TimeoutError:
+                        pass
 
         except Exception as e:
-            logger.error(f"Error in agent loop thread: {e}")
+            logger.error(f"Error in agent loop for {self.agent.name}: {e}")
         finally:
-            with self._running_lock:
-                self._thread = None
-                logger.info("Agent loop stopped")
+            logger.info(f"Agent task for {self.agent.name} is about to shut down")
+            async with self._running_lock:
+                self._task = None
+                logger.info(f"Agent loop stopped for {self.agent.name}")
 
-    def start_agent_loop(self):
-        with self._running_lock:
-            if self.is_running:
+    async def start_agent_loop(self):
+        """Start the agent loop as an asyncio task"""
+        async with self._running_lock:
+            if await self.is_running():
                 raise ValueError(f"Agent {self.agent.name} is already running")
 
             self._stop_event.clear()
+            self._task = asyncio.create_task(self._run_agent_loop())
 
-            self._thread = threading.Thread(target=self._run_agent_loop())
-            self._thread.daemon = True  # Allows exiting the app even if the agent is still running
-            self._thread.start()
+    async def stop_agent_loop(self, timeout: float = 5.0) -> bool:
+        """Stop the agent loop"""
+        logger.info(f"Initiating stop for agent {self.agent.name}")
 
-    def stop_agent_loop(self, timeout: float = 5.0) -> bool:
-        thread = None
-        with self._running_lock:
-            if not self.is_running:
+        async with self._running_lock:
+            if not await self.is_running():  # Changed to method call
+                logger.info(f"Agent {self.agent.name} already stopped")
                 return True
-            thread = self._thread
+            current_task = self._task
 
+        logger.info(f"Setting stop event for {self.agent.name}")
         self._stop_event.set()
-        thread.join(timeout)
 
-        with self._running_lock:
-            stopped = not self.is_running
+        if current_task:
+            logger.info(f"Waiting for task to complete for {self.agent.name}")
+            try:
+                await asyncio.wait_for(current_task, timeout=timeout)
+                logger.info(f"Task completed for {self.agent.name}")
+            except asyncio.TimeoutError:
+                logger.error(f"Timeout waiting for {self.agent.name} to stop")
+                return False
+
+        async with self._running_lock:
+            stopped = not await self.is_running()  # Changed to method call
             if not stopped:
-                logger.error(f"Failed to stop agent {self.agent.name}'s loop within timeout")
+                logger.error(f"Failed to stop agent {self.agent.name}'s loop")
+            else:
+                logger.info(f"Successfully stopped agent {self.agent.name}")
             return stopped
