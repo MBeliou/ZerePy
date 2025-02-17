@@ -37,8 +37,7 @@ class ServerState:
         return agents
 
     def _save_agent(self, config: AgentConfig):
-        exists = any(f"{config.name}.json"  for f in self.config_dir.glob("*.json"))
-
+        exists = any(f"{config.name}.json" for f in self.config_dir.glob("*.json"))
 
     def add_agent(self, agent: AgentConfig):
         self.agent_configs[agent.id] = agent
@@ -51,7 +50,7 @@ class ServerState:
 
     def delete_agent(self, agent_name: str) -> bool:
         agent_config = self.agent_configs.get(agent_name)
-        if  agent_config is None:
+        if agent_config is None:
             return False
 
         agent_controller = self.agent_loops.get(agent_name)
@@ -75,7 +74,6 @@ class ServerState:
     def _make_agent_file_path(self, agent_name: str):
         return self.config_dir / self._make_agent_file_name(agent_name)
 
-
     def start_agent(self, agent_name: str) -> bool:
         # Make sure agent config actually exists
         agent = self.agent_configs.get(agent_name)
@@ -89,8 +87,7 @@ class ServerState:
 
         try:
             agent = ZerePyAgent(agent_name)
-            AgentController(agent)
-            self.agent_loops[agent_name] = ZerePyAgent(agent_name)
+            self.agent_loops[agent_name] = AgentController(agent)
 
             return True
 
@@ -147,7 +144,7 @@ class AgentController:
             self._stop_event.clear()
 
             self._thread = threading.Thread(target=self._run_agent_loop())
-            self._thread.daemon = True # Allows exiting the app even if the agent is still running
+            self._thread.daemon = True  # Allows exiting the app even if the agent is still running
             self._thread.start()
 
     def stop_agent_loop(self, timeout: float = 5.0) -> bool:
