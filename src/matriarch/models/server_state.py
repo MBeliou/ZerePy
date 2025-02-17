@@ -1,18 +1,20 @@
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
-from dataclasses import dataclass
 from typing import Dict, List, Optional
+import logging
 
 from src.matriarch.models.configuration import AgentConfig
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("matriarch/server")
 
 
 class ServerState:
     def __init__(self, config_dir: str = "agents"):
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(exist_ok=True)
-        print(f"Config directory is located: {self.config_dir}")
+        logger.info(f"Config directory is located: {self.config_dir}")
 
         self.agents: Dict[str, AgentConfig] = self._load_agents()
 
@@ -28,7 +30,7 @@ class ServerState:
                     agents[agent_config] = agent_config
 
             except Exception as e:
-                print(f"Error loading {config_file}: {e}")
+                logger.error(f"Error loading {config_file}: {e}")
         return agents
 
     def add_agent(self, agent: AgentConfig):
