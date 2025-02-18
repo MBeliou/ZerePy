@@ -161,7 +161,7 @@ class ConnectionManager:
             logging.error(f"\nAn error occurred: {e}")
 
     def perform_action(
-        self, connection_name: str, action_name: str, params: List[Any]
+            self, connection_name: str, action_name: str, params: List[Any]
     ) -> Optional[Any]:
         """Perform an action on a specific connection with given parameters"""
         try:
@@ -175,7 +175,7 @@ class ConnectionManager:
 
             if action_name not in connection.actions:
                 logging.error(
-                    f"\nError: Unknown action '{action_name}' for connection '{connection_name}'"
+                    f"\nError: Unknown action '{action_name}' for connection '{connection_name}', expected one of '{connection.actions}'"
                 )
                 return None
 
@@ -204,6 +204,7 @@ class ConnectionManager:
                 )
                 return None
 
+            logging.info(f"Performing {connection_name} - {action_name} - {kwargs}")
             return connection.perform_action(action_name, kwargs)
 
         except Exception as e:

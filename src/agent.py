@@ -4,6 +4,8 @@ import time
 import logging
 import os
 from pathlib import Path
+from typing import Optional, Any
+
 from dotenv import load_dotenv
 from src.connection_manager import ConnectionManager
 from src.helpers import print_h_bar
@@ -145,7 +147,7 @@ class ZerePyAgent:
             params=[prompt, system_prompt]
         )
 
-    def perform_action(self, connection: str, action: str, **kwargs) -> None:
+    def perform_action(self, connection: str, action: str, **kwargs) -> Optional[Any]:
         return self.connection_manager.perform_action(connection, action, **kwargs)
     
     def select_action(self, use_time_based_weights: bool = False) -> dict:

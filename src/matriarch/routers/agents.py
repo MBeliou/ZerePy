@@ -3,7 +3,7 @@ import logging
 
 from src.matriarch.dependencies.dependencies import get_server_state
 from src.matriarch.models.server_state import ServerState, AgentConfig
-
+from src.server.app import ActionRequest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("matriarch/agents")
@@ -44,7 +44,7 @@ async def configure_agent():
     raise HTTPException(status_code=501, detail="Can't configure agents yet")
 
 
-# Actions
+# Lifecycle
 
 @router.post("/{agent_name}/start")
 async def start_agent(agent_name: str, server_state: ServerState = Depends(get_server_state)):
@@ -77,3 +77,16 @@ async def stop_agent(agent_name: str, server_state: ServerState = Depends(get_se
         }
     else:
         raise HTTPException(status_code=500, detail=f"Couldn't stop agent {agent_name}")
+
+
+# Actions
+@router.post("/{agent_name}/action")
+async def request_action(agent_name: str, action_request: ActionRequest, server_state: ServerState = Depends(get_server_state)):
+    if server_state.get_agent(agent_name) is None:
+        raise HTTPException(status_code=404, detail=f"Couldn't find agent {agent_name}")
+
+    response = await server_state.request_action(agent_name, action_request)
+    return  {
+        "status": "success",
+        "response": response
+    }

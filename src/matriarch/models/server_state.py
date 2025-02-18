@@ -10,6 +10,7 @@ import asyncio
 
 from src.agent import ZerePyAgent
 from src.matriarch.models.configuration import AgentConfig
+from src.server.app import ActionRequest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("matriarch/server")
@@ -132,6 +133,13 @@ class ServerState:
 
         return True
 
+    async def request_action(self, agent_name: str, action_request: ActionRequest):
+        safe_name = self._make_safe_agent_name(agent_name)
+        controller = self.agent_loops.get(safe_name)
+        if controller is not None:
+            return await controller.request_action(action_request)
+
+        return None
 
 class AgentController:
     def __init__(self, agent: "ZerePyAgent"):
@@ -157,7 +165,7 @@ class AgentController:
                     logger.info(f"Stop event status: {self._stop_event.is_set()}")
 
                     try:
-                        await asyncio.wait_for(self._stop_event.wait(), timeout=0.1)
+                        await asyncio.wait_for(self._stop_event.wait(), timeout=2.0)
                         logger.info(f"Stop event detected for {self.agent.name}")
                         break
                     except asyncio.TimeoutError:
@@ -218,3 +226,13 @@ class AgentController:
             else:
                 logger.info(f"Successfully stopped agent {self.agent.name}")
             return stopped
+
+
+    async def request_action(self, action_request: ActionRequest):
+        try:
+            #asyncio.create_task()
+            ret = self.agent.perform_action(action_request.connection, action_request.action, params=action_request.params)
+            return ret
+
+        except Exception as e:
+            raise f"Couldn't run action {action_request.action} with agent {self.agent.name}: {e}"
