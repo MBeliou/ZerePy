@@ -163,8 +163,8 @@ class SonicConnection(BaseConnection):
     def transfer(self, to_address: str, amount: float, token_address: Optional[str] = None) -> str:
         """Transfer $S or tokens to an address"""
         try:
-            private_key = os.getenv('SONIC_PRIVATE_KEY')
-            account = self._web3.eth.account.from_key(private_key)
+            #private_key = os.getenv('SONIC_PRIVATE_KEY')
+            account = self._web3.eth.account.from_key(self.private_key)
             chain_id = self._web3.eth.chain_id
 
             if token_address:

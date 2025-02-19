@@ -1,23 +1,30 @@
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Iterable
 from dotenv import load_dotenv, set_key
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessage, ChatCompletionUserMessageParam, ChatCompletionSystemMessageParam, \
+    ChatCompletionAssistantMessageParam
+
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
 
 logger = logging.getLogger("connections.openai_connection")
+
 
 class OpenAIConnectionError(Exception):
     """Base exception for OpenAI connection errors"""
     pass
 
+
 class OpenAIConfigurationError(OpenAIConnectionError):
     """Raised when there are configuration/credential issues"""
     pass
 
+
 class OpenAIAPIError(OpenAIConnectionError):
     """Raised when OpenAI API requests fail"""
     pass
+
 
 class OpenAIConnection(BaseConnection):
     def __init__(self, config: Dict[str, Any]):
@@ -32,14 +39,14 @@ class OpenAIConnection(BaseConnection):
         """Validate OpenAI configuration from JSON"""
         required_fields = ["model"]
         missing_fields = [field for field in required_fields if field not in config]
-        
+
         if missing_fields:
             raise ValueError(f"Missing required configuration fields: {', '.join(missing_fields)}")
-            
+
         # Validate model exists (will be checked in detail during configure)
         if not isinstance(config["model"], str):
             raise ValueError("model must be a string")
-            
+
         return config
 
     def register_actions(self) -> None:
@@ -91,7 +98,7 @@ class OpenAIConnection(BaseConnection):
         logger.info("1. Go to https://platform.openai.com/account/api-keys")
         logger.info("2. Create a new project or open an existing one.")
         logger.info("3. In your project settings, navigate to the API keys section and create a new API key")
-        
+
         api_key = input("\nEnter your OpenAI API key: ")
 
         try:
@@ -100,7 +107,7 @@ class OpenAIConnection(BaseConnection):
                     f.write('')
 
             set_key('.env', 'OPENAI_API_KEY', api_key)
-            
+
             # Validate the API key by trying to list models
             client = OpenAI(api_key=api_key)
             client.models.list()
@@ -113,7 +120,7 @@ class OpenAIConnection(BaseConnection):
             logger.error(f"Configuration failed: {e}")
             return False
 
-    def is_configured(self, verbose = False) -> bool:
+    def is_configured(self, verbose=False) -> bool:
         """Check if OpenAI API key is configured and valid"""
         try:
             load_dotenv()
@@ -124,7 +131,7 @@ class OpenAIConnection(BaseConnection):
             client = OpenAI(api_key=api_key)
             client.models.list()
             return True
-            
+
         except Exception as e:
             if verbose:
                 logger.debug(f"Configuration check failed: {e}")
@@ -134,7 +141,7 @@ class OpenAIConnection(BaseConnection):
         """Generate text using OpenAI models"""
         try:
             client = self._get_client()
-            
+
             # Use configured model if none provided
             if not model:
                 model = self.config["model"]
@@ -148,59 +155,82 @@ class OpenAIConnection(BaseConnection):
             )
 
             return completion.choices[0].message.content
-            
+
         except Exception as e:
             raise OpenAIAPIError(f"Text generation failed: {e}")
 
-    def check_model(self, model, **kwargs):
+    def instantiate_chat(self, prompt: str, system_prompt: str, model: str = None) -> str:
+        """Starts and instantiate a new chat with the LLM"""
+        return self.generate_text(prompt, system_prompt, model)
+
+    def resume_chat(self, messages: Iterable[
+        ChatCompletionUserMessageParam | ChatCompletionSystemMessageParam | ChatCompletionAssistantMessageParam],
+                    model: str = None):
+        """Keeps going after an initial chat"""
         try:
-            client = self._get_client()
-            try:
-                client.models.retrieve(model=model)
-                # If we get here, the model exists
-                return True
-            except Exception:
-                return False
-        except Exception as e:
-            raise OpenAIAPIError(e)
 
-    def list_models(self, **kwargs) -> None:
-        """List all available OpenAI models"""
+            client = self._get_client()
+            if not model:
+                model = self.config["model"]
+
+            completion = client.chat.completions.create(model=model, messages=messages)
+            return completion.choices[0].message.content
+
+        except Exception as e:
+            raise OpenAIAPIError(f"Text generation failed: {e}")
+
+
+def check_model(self, model, **kwargs):
+    try:
+        client = self._get_client()
         try:
-            client = self._get_client()
-            response = client.models.list().data
-            
-            fine_tuned_models = [
-                model for model in response 
-                if model.owned_by in ["organization", "user", "organization-owner"]
-            ]
+            client.models.retrieve(model=model)
+            # If we get here, the model exists
+            return True
+        except Exception:
+            return False
+    except Exception as e:
+        raise OpenAIAPIError(e)
 
-            logger.info("\nGPT MODELS:")
-            logger.info("1. gpt-3.5-turbo")
-            logger.info("2. gpt-4")
-            logger.info("3. gpt-4-turbo")
-            logger.info("4. gpt-4o")
-            logger.info("5. gpt-4o-mini")
-            
-            if fine_tuned_models:
-                logger.info("\nFINE-TUNED MODELS:")
-                for i, model in enumerate(fine_tuned_models):
-                    logger.info(f"{i+1}. {model.id}")
-                    
-        except Exception as e:
-            raise OpenAIAPIError(f"Listing models failed: {e}")
-    
-    def perform_action(self, action_name: str, kwargs) -> Any:
-        """Execute a Twitter action with validation"""
-        if action_name not in self.actions:
-            raise KeyError(f"Unknown action: {action_name}")
 
-        action = self.actions[action_name]
-        errors = action.validate_params(kwargs)
-        if errors:
-            raise ValueError(f"Invalid parameters: {', '.join(errors)}")
+def list_models(self, **kwargs) -> None:
+    """List all available OpenAI models"""
+    try:
+        client = self._get_client()
+        response = client.models.list().data
 
-        # Call the appropriate method based on action name
-        method_name = action_name.replace('-', '_')
-        method = getattr(self, method_name)
-        return method(**kwargs)
+        fine_tuned_models = [
+            model for model in response
+            if model.owned_by in ["organization", "user", "organization-owner"]
+        ]
+
+        logger.info("\nGPT MODELS:")
+        logger.info("1. gpt-3.5-turbo")
+        logger.info("2. gpt-4")
+        logger.info("3. gpt-4-turbo")
+        logger.info("4. gpt-4o")
+        logger.info("5. gpt-4o-mini")
+
+        if fine_tuned_models:
+            logger.info("\nFINE-TUNED MODELS:")
+            for i, model in enumerate(fine_tuned_models):
+                logger.info(f"{i + 1}. {model.id}")
+
+    except Exception as e:
+        raise OpenAIAPIError(f"Listing models failed: {e}")
+
+
+def perform_action(self, action_name: str, kwargs) -> Any:
+    """Execute a Twitter action with validation"""
+    if action_name not in self.actions:
+        raise KeyError(f"Unknown action: {action_name}")
+
+    action = self.actions[action_name]
+    errors = action.validate_params(kwargs)
+    if errors:
+        raise ValueError(f"Invalid parameters: {', '.join(errors)}")
+
+    # Call the appropriate method based on action name
+    method_name = action_name.replace('-', '_')
+    method = getattr(self, method_name)
+    return method(**kwargs)
