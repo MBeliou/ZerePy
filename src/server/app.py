@@ -1,7 +1,9 @@
+import json
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import logging
 import asyncio
 import signal
@@ -16,7 +18,19 @@ class ActionRequest(BaseModel):
     """Request model for agent actions"""
     connection: str
     action: str
-    params: Optional[List[str]] = []
+    #params: Optional[List[str]] = []
+    params: List[Union[str, List[dict]]]  # Let's try and get json support for parameters as well
+
+
+    def preprocess_params(self):
+        processed_params = []
+        for param in self.params:
+            if isinstance(param, list):
+                processed_params.append(json.dumps(param))
+            else:
+                processed_params.append(param)
+        self.params = processed_params
+        return self
 
 class ConfigureRequest(BaseModel):
     """Request model for configuring connections"""

@@ -31,8 +31,11 @@ class TwitterConfig(BaseModel):
     class Config:
         frozen = True
 
+class OpenAIConfig(BaseModel):
+    name: str
+    model: Optional[str]
 
-ConfigItem = DiscordConfig | TwitterConfig | NetworkConfig
+ConfigItem = DiscordConfig | TwitterConfig | NetworkConfig | OpenAIConfig
 
 
 class TaskConfig(BaseModel):

@@ -107,8 +107,12 @@ class BaseConnection(ABC):
             KeyError: If the action is not registered
             ValueError: If the action parameters are invalid
         """
-        if action_name not in self.actions:
-            raise KeyError(f"Unknown action: {action_name}")
+
+        try:
+            if action_name not in self.actions:
+                raise KeyError(f"Unknown action: {action_name}")
             
-        handler = self.actions[action_name]
-        return handler(**kwargs)
+            handler = self.actions[action_name]
+            return handler(**kwargs)
+        except Exception as e:
+            print(f"Called base class with {kwargs} - {e}")

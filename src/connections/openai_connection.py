@@ -10,6 +10,8 @@ from src.connections.base_connection import BaseConnection, Action, ActionParame
 
 logger = logging.getLogger("connections.openai_connection")
 
+MessageParam = ChatCompletionUserMessageParam | ChatCompletionSystemMessageParam | ChatCompletionAssistantMessageParam
+
 
 class OpenAIConnectionError(Exception):
     """Base exception for OpenAI connection errors"""
@@ -72,7 +74,23 @@ class OpenAIConnection(BaseConnection):
                 name="list-models",
                 parameters=[],
                 description="List all available OpenAI models"
-            )
+            ),
+            "start-chat": Action(
+                name="start-chat",
+                parameters=[
+                    ActionParameter("prompt", True, str, "The input prompt for text generation"),
+                    ActionParameter("system_prompt", True, str, "System prompt to guide the model"),
+                    ActionParameter("model", False, str, "Model to use for generation")
+                ],
+                description="Starts a new text chat using OpenAI models"
+            ),
+            "resume-chat": Action(
+                name="resume-chat",
+                parameters=[
+                    ActionParameter("messages", True, list[MessageParam], "All the messages in the chat"),
+                ],
+                description="Resumes an existing text chat using OpenAI models"
+            ),
         }
 
     def _get_client(self) -> OpenAI:
@@ -159,12 +177,12 @@ class OpenAIConnection(BaseConnection):
         except Exception as e:
             raise OpenAIAPIError(f"Text generation failed: {e}")
 
-    def instantiate_chat(self, prompt: str, system_prompt: str, model: str = None) -> str:
+    def start_chat(self, prompt: str, system_prompt: str, model: str = None) -> str:
+        logger.info(f"starting chat")
         """Starts and instantiate a new chat with the LLM"""
         return self.generate_text(prompt, system_prompt, model)
 
-    def resume_chat(self, messages: Iterable[
-        ChatCompletionUserMessageParam | ChatCompletionSystemMessageParam | ChatCompletionAssistantMessageParam],
+    def resume_chat(self, messages: Iterable[MessageParam],
                     model: str = None):
         """Keeps going after an initial chat"""
         try:
@@ -179,58 +197,63 @@ class OpenAIConnection(BaseConnection):
         except Exception as e:
             raise OpenAIAPIError(f"Text generation failed: {e}")
 
+    def check_model(self, model, **kwargs):
 
-def check_model(self, model, **kwargs):
-    try:
-        client = self._get_client()
         try:
-            client.models.retrieve(model=model)
-            # If we get here, the model exists
-            return True
-        except Exception:
-            return False
-    except Exception as e:
-        raise OpenAIAPIError(e)
+            client = self._get_client()
+            try:
+                client.models.retrieve(model=model)
+                # If we get here, the model exists
+                return True
+            except Exception:
+                return False
+        except Exception as e:
+            raise OpenAIAPIError(e)
 
+    def list_models(self, **kwargs) -> None:
+        """List all available OpenAI models"""
+        try:
+            client = self._get_client()
+            response = client.models.list().data
 
-def list_models(self, **kwargs) -> None:
-    """List all available OpenAI models"""
-    try:
-        client = self._get_client()
-        response = client.models.list().data
+            fine_tuned_models = [
+                model for model in response
+                if model.owned_by in ["organization", "user", "organization-owner"]
+            ]
 
-        fine_tuned_models = [
-            model for model in response
-            if model.owned_by in ["organization", "user", "organization-owner"]
-        ]
+            logger.info("\nGPT MODELS:")
+            logger.info("1. gpt-3.5-turbo")
+            logger.info("2. gpt-4")
+            logger.info("3. gpt-4-turbo")
+            logger.info("4. gpt-4o")
+            logger.info("5. gpt-4o-mini")
 
-        logger.info("\nGPT MODELS:")
-        logger.info("1. gpt-3.5-turbo")
-        logger.info("2. gpt-4")
-        logger.info("3. gpt-4-turbo")
-        logger.info("4. gpt-4o")
-        logger.info("5. gpt-4o-mini")
+            if fine_tuned_models:
+                logger.info("\nFINE-TUNED MODELS:")
+                for i, model in enumerate(fine_tuned_models):
+                    logger.info(f"{i + 1}. {model.id}")
 
-        if fine_tuned_models:
-            logger.info("\nFINE-TUNED MODELS:")
-            for i, model in enumerate(fine_tuned_models):
-                logger.info(f"{i + 1}. {model.id}")
+        except Exception as e:
+            raise OpenAIAPIError(f"Listing models failed: {e}")
 
-    except Exception as e:
-        raise OpenAIAPIError(f"Listing models failed: {e}")
+    def perform_action(self, action_name: str, kwargs) -> Any:
+        """Execute a Twitter action with validation"""
 
+        try:
+            logger.info(f"openai - looking to perform action {action_name}")
+            if action_name not in self.actions:
+                raise KeyError(f"Unknown action: {action_name}")
 
-def perform_action(self, action_name: str, kwargs) -> Any:
-    """Execute a Twitter action with validation"""
-    if action_name not in self.actions:
-        raise KeyError(f"Unknown action: {action_name}")
+            action = self.actions[action_name]
+            errors = action.validate_params(kwargs)
+            if errors:
+                raise ValueError(f"Invalid parameters: {', '.join(errors)}")
 
-    action = self.actions[action_name]
-    errors = action.validate_params(kwargs)
-    if errors:
-        raise ValueError(f"Invalid parameters: {', '.join(errors)}")
+            # Call the appropriate method based on action name
+            method_name = action_name.replace('-', '_')
+            method = getattr(self, method_name)
 
-    # Call the appropriate method based on action name
-    method_name = action_name.replace('-', '_')
-    method = getattr(self, method_name)
-    return method(**kwargs)
+            logger.info(f"Running method {method_name} with {kwargs}")
+            return method(**kwargs)
+        except Exception as e:
+            logger.error(f"Couldn't run {action_name} with {kwargs}: {e}")

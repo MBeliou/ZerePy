@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 import logging
 
@@ -85,6 +87,9 @@ async def request_action(agent_name: str, action_request: ActionRequest, server_
     if server_state.get_agent(agent_name) is None:
         raise HTTPException(status_code=404, detail=f"Couldn't find agent {agent_name}")
 
+
+    #action_request.params = list(map(json.dumps, action_request.params))
+    #logger.info(action_request)
     response = await server_state.request_action(agent_name, action_request)
     return  {
         "status": "success",
