@@ -3,11 +3,6 @@ from sqlmodel import Field, SQLModel, Relationship, Column, JSON
 import json
 from datetime import datetime
 
-if TYPE_CHECKING:
-    from typing import ForwardRef
-
-    Agent = ForwardRef("Agent")
-
 
 class AgentBase(SQLModel):
     """Base model for Agent"""
@@ -43,62 +38,15 @@ class AgentBase(SQLModel):
         }
 
 
-class Task(SQLModel, table=True):
-    """Task model for database storage"""
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    weight: float = 1.0
-    agent_id: Optional[int] = Field(default=None, foreign_key="agent.id")
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert the task to a dictionary"""
-        return {
-            "name": self.name,
-            "weight": self.weight
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Task":
-        """Create a task from a dictionary"""
-        return cls(**data)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-class ConfigBase(SQLModel, table=True):
-    """Base model for all configurations"""
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    agent_id: Optional[int] = Field(default=None, foreign_key="agent.id")
-
-    # Discriminator column for polymorphic inheritance
-    config_type: str = Field(default="base")
-
-    __mapper_args__ = {"polymorphic_on": "config_type", "polymorphic_identity": "base"}
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        return {
-            "name": self.name
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConfigBase":
-        """Create a config from a dictionary"""
-        return cls(**data)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
 class Agent(AgentBase, table=True):
     """Agent model for database storage"""
     id: Optional[int] = Field(default=None, primary_key=True)
 
     # Explicitly define relationships with back_populates to avoid circular references
-    configs: List["ConfigBase"] = Relationship(sa_relationship_kwargs={"cascade": "all, delete-orphan"})
-    tasks: List["Task"] = Relationship(sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    configs: List["ConfigBase"] = Relationship(back_populates="agent",
+                                               sa_relationship_kwargs={"cascade": "all, delete-orphan"})
+    tasks: List["Task"] = Relationship(back_populates="agent",
+                                       sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
     class Config:
         arbitrary_types_allowed = True
@@ -121,211 +69,273 @@ class Agent(AgentBase, table=True):
         # Create the agent
         agent = Agent(**agent_data)
 
-        # Create configs
-        for config_data in configs_data:
-            config_type = config_data.get("name")
-            config = None
-
-            if config_type == "twitter":
-                config = TwitterConfig(**config_data)
-            elif config_type == "openai":
-                config = OpenAIConfig(**config_data)
-            elif config_type == "anthropic":
-                config = AnthropicConfig(**config_data)
-            elif config_type == "discord":
-                config = DiscordConfig(**config_data)
-            elif config_type == "farcaster":
-                config = FarcasterConfig(**config_data)
-            elif config_type in ["solana", "ethereum", "sonic"]:
-                config = NetworkConfig(**config_data)
-            else:
-                config = ConfigBase(**config_data)
-
-            if config:
-                agent.configs.append(config)
-
-        # Create tasks
-        for task_data in tasks_data:
-            task = Task(**task_data)
-            agent.tasks.append(task)
-
+        # We'll handle configs and tasks after agent is saved to DB
         return agent
 
 
-# Update ConfigBase to reference Agent for the relationship
-ConfigBase.agent = Relationship(back_populates="configs")
-Task.agent = Relationship(back_populates="tasks")
-
-
-# Define subclass configurations
-class TwitterConfig(SQLModel, table=False):
-    """Twitter configuration"""
-    timeline_read_count: int = 10
-    own_tweet_replies_count: int = 2
-    tweet_interval: int = 5400
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        return {
-            "name": "twitter",
-            "timeline_read_count": self.timeline_read_count,
-            "own_tweet_replies_count": self.own_tweet_replies_count,
-            "tweet_interval": self.tweet_interval
-        }
-
-
-class FarcasterConfig(SQLModel, table=False):
-    """Farcaster configuration"""
-    timeline_read_count: int = 10
-    cast_interval: int = 60
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        return {
-            "name": "farcaster",
-            "timeline_read_count": self.timeline_read_count,
-            "cast_interval": self.cast_interval
-        }
-
-
-class OpenAIConfig(SQLModel, table=False):
-    """OpenAI configuration"""
-    model: str = "gpt-4o"
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        return {
-            "name": "openai",
-            "model": self.model
-        }
-
-
-class AnthropicConfig(SQLModel, table=False):
-    """Anthropic configuration"""
-    model: str = "claude-3-5-sonnet-20241022"
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        return {
-            "name": "anthropic",
-            "model": self.model
-        }
-
-
-class DiscordConfig(SQLModel, table=False):
-    """Discord configuration"""
-    message_read_count: int = 10
-    message_emoji_name: str = "❤️"
-    server_id: str = ""
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        return {
-            "name": "discord",
-            "message_read_count": self.message_read_count,
-            "message_emoji_name": self.message_emoji_name,
-            "server_id": self.server_id
-        }
-
-
-class NetworkConfig(SQLModel, table=False):
-    """Network configuration for blockchain connections"""
-    network: Optional[str] = None
-    rpc: Optional[str] = None
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        result = {"name": "network"}
-        if self.network:
-            result["network"] = self.network
-        if self.rpc:
-            result["rpc"] = self.rpc
-        return result
-
-    """Twitter configuration"""
-    timeline_read_count: int = 10
-    own_tweet_replies_count: int = 2
-    tweet_interval: int = 5400
-
-    __mapper_args__ = {"polymorphic_identity": "twitter"}
-
-    def to_config_dict(self) -> Dict[str, Any]:
-        """Convert the config to a dictionary"""
-        base_dict = super().to_config_dict()
-        base_dict.update({
-            "timeline_read_count": self.timeline_read_count,
-            "own_tweet_replies_count": self.own_tweet_replies_count,
-            "tweet_interval": self.tweet_interval
-        })
-        return base_dict
-
-
-class Config:
-    arbitrary_types_allowed = True
-    loop_delay: int = 900
-    use_time_based_weights: bool = False
-    time_based_multipliers: str = Field(sa_column=Column(JSON))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+class Task(SQLModel, table=True):
+    """Task model for database storage"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    weight: float = 1.0
+    agent_id: Optional[int] = Field(default=None, foreign_key="agent.id")
+    agent: Optional["Agent"] = Relationship(back_populates="tasks")
 
     def to_dict(self) -> Dict[str, Any]:
-
-        """Convert the agent to a dictionary"""
+        """Convert the task to a dictionary"""
         return {
             "name": self.name,
-            "description": self.description,
-            "bio": json.loads(self.bio),
-            "traits": json.loads(self.traits),
-            "examples": json.loads(self.examples),
-            "example_accounts": json.loads(self.example_accounts),
-            "loop_delay": self.loop_delay,
-            "use_time_based_weights": self.use_time_based_weights,
-            "time_based_multipliers": json.loads(self.time_based_multipliers),
-            "config": [config.to_config_dict() for config in self.configs],
-            "tasks": [task.to_dict() for task in self.tasks]
+            "weight": self.weight
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Agent":
+    def from_dict(cls, data: Dict[str, Any]) -> "Task":
+        """Create a task from a dictionary"""
+        return cls(**data)
 
-        """Create an agent from a dictionary"""
-        # Extract configs and tasks to create separately
-        configs_data = data.pop("config", [])
-        tasks_data = data.pop("tasks", [])
+    class Config:
+        arbitrary_types_allowed = True
 
-        # Convert lists to JSON strings
-        for field in ["bio", "traits", "examples", "example_accounts", "time_based_multipliers"]:
-            if field in data and not isinstance(data[field], str):
-                data[field] = json.dumps(data[field])
 
-        agent = Agent(**data)
+class ConfigBase(SQLModel, table=True):
+    """Base model for all configurations"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    agent_id: int = Field(foreign_key="agent.id")
+    agent: Optional["Agent"] = Relationship(back_populates="configs")
 
-        # Create and link configs
-        for config_data in configs_data:
-            config_type = config_data.get("name")
-            if config_type == "twitter":
-                config = TwitterConfig.from_dict(config_data)
-            elif config_type == "openai":
-                config = OpenAIConfig.from_dict(config_data)
-            elif config_type == "anthropic":
-                config = AnthropicConfig.from_dict(config_data)
-            elif config_type == "discord":
-                config = DiscordConfig.from_dict(config_data)
-            elif config_type in ["solana", "ethereum", "sonic"]:
-                config = NetworkConfig.from_dict(config_data)
-            elif config_type == "farcaster":
-                config = FarcasterConfig.from_dict(config_data)
-            else:
-                config = ConfigBase.from_dict(config_data)
+    # JSON field to store all subclass-specific attributes
+    attributes: str = Field(default="{}", sa_column=Column(JSON))
 
-        config.agent_id = agent.id
-        agent.configs.append(config)
+    # Discriminator column for polymorphic inheritance
+    config_type: str = Field(default="base")
 
-        # Create and link tasks
-        for task_data in tasks_data:
-            task = Task.from_dict(task_data)
-            task.agent_id = agent.id
-            agent.tasks.append(task)
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        # Base dictionary with common fields
+        result = {
+            "name": self.name,
+            "config_type": self.config_type
+        }
 
-        return agent
+        # Add attributes from the JSON field
+        if hasattr(self, "attributes") and self.attributes:
+            try:
+                attributes = json.loads(self.attributes)
+                result.update(attributes)
+            except (json.JSONDecodeError, TypeError):
+                pass
 
+        return result
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> "ConfigBase":
+        """Create a config from a dictionary"""
+        config_data = data.copy()
+
+        # Set the agent_id if provided
+        if agent_id is not None:
+            config_data["agent_id"] = agent_id
+
+        # Extract name and config_type
+        name = config_data.pop("name", "base")
+        config_type = name  # Use name as config_type
+
+        # Create a new instance of the appropriate config class
+        if name == "twitter":
+            return TwitterConfig.create_from_dict(config_data, agent_id)
+        elif name == "openai":
+            return OpenAIConfig.create_from_dict(config_data, agent_id)
+        elif name == "anthropic":
+            return AnthropicConfig.create_from_dict(config_data, agent_id)
+        elif name == "discord":
+            return DiscordConfig.create_from_dict(config_data, agent_id)
+        elif name == "farcaster":
+            return FarcasterConfig.create_from_dict(config_data, agent_id)
+        elif name in ["solana", "ethereum", "sonic"]:
+            return NetworkConfig.create_from_dict(config_data, agent_id)
+        else:
+            # For base config, just set attributes as JSON
+            config = ConfigBase(
+                name=name,
+                config_type=config_type,
+                agent_id=agent_id,
+                attributes=json.dumps(config_data)
+            )
+            return config
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+# Define specific configuration classes
+class TwitterConfig:
+    """Twitter configuration"""
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> ConfigBase:
+        """Create a TwitterConfig from a dictionary and convert to ConfigBase"""
+        attributes = {
+            "timeline_read_count": data.get("timeline_read_count", 10),
+            "own_tweet_replies_count": data.get("own_tweet_replies_count", 2),
+            "tweet_interval": data.get("tweet_interval", 5400)
+        }
+
+        return ConfigBase(
+            name="twitter",
+            config_type="twitter",
+            agent_id=agent_id,
+            attributes=json.dumps(attributes)
+        )
+
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        attributes = json.loads(self.attributes)
+        return {
+            "name": "twitter",
+            "timeline_read_count": attributes.get("timeline_read_count", 10),
+            "own_tweet_replies_count": attributes.get("own_tweet_replies_count", 2),
+            "tweet_interval": attributes.get("tweet_interval", 5400)
+        }
+
+
+class FarcasterConfig:
+    """Farcaster configuration"""
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> ConfigBase:
+        """Create a FarcasterConfig from a dictionary and convert to ConfigBase"""
+        attributes = {
+            "timeline_read_count": data.get("timeline_read_count", 10),
+            "cast_interval": data.get("cast_interval", 60)
+        }
+
+        return ConfigBase(
+            name="farcaster",
+            config_type="farcaster",
+            agent_id=agent_id,
+            attributes=json.dumps(attributes)
+        )
+
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        attributes = json.loads(self.attributes)
+        return {
+            "name": "farcaster",
+            "timeline_read_count": attributes.get("timeline_read_count", 10),
+            "cast_interval": attributes.get("cast_interval", 60)
+        }
+
+
+class OpenAIConfig:
+    """OpenAI configuration"""
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> ConfigBase:
+        """Create an OpenAIConfig from a dictionary and convert to ConfigBase"""
+        attributes = {
+            "model": data.get("model", "gpt-4o")
+        }
+
+        return ConfigBase(
+            name="openai",
+            config_type="openai",
+            agent_id=agent_id,
+            attributes=json.dumps(attributes)
+        )
+
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        attributes = json.loads(self.attributes)
+        return {
+            "name": "openai",
+            "model": attributes.get("model", "gpt-4o")
+        }
+
+
+class AnthropicConfig:
+    """Anthropic configuration"""
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> ConfigBase:
+        """Create an AnthropicConfig from a dictionary and convert to ConfigBase"""
+        attributes = {
+            "model": data.get("model", "claude-3-5-sonnet-20241022")
+        }
+
+        return ConfigBase(
+            name="anthropic",
+            config_type="anthropic",
+            agent_id=agent_id,
+            attributes=json.dumps(attributes)
+        )
+
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        attributes = json.loads(self.attributes)
+        return {
+            "name": "anthropic",
+            "model": attributes.get("model", "claude-3-5-sonnet-20241022")
+        }
+
+
+class DiscordConfig:
+    """Discord configuration"""
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> ConfigBase:
+        """Create a DiscordConfig from a dictionary and convert to ConfigBase"""
+        attributes = {
+            "message_read_count": data.get("message_read_count", 10),
+            "message_emoji_name": data.get("message_emoji_name", "❤️"),
+            "server_id": data.get("server_id", "")
+        }
+
+        return ConfigBase(
+            name="discord",
+            config_type="discord",
+            agent_id=agent_id,
+            attributes=json.dumps(attributes)
+        )
+
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        attributes = json.loads(self.attributes)
+        return {
+            "name": "discord",
+            "message_read_count": attributes.get("message_read_count", 10),
+            "message_emoji_name": attributes.get("message_emoji_name", "❤️"),
+            "server_id": attributes.get("server_id", "")
+        }
+
+
+class NetworkConfig:
+    """Network configuration for blockchain connections"""
+
+    @staticmethod
+    def create_from_dict(data: Dict[str, Any], agent_id: Optional[int] = None) -> ConfigBase:
+        """Create a NetworkConfig from a dictionary and convert to ConfigBase"""
+        attributes = {
+            "network": data.get("network"),
+            "rpc": data.get("rpc"),
+            "private_key": data.get("private_key")
+        }
+
+        return ConfigBase(
+            name=data.get("network", "network"),
+            config_type="network",
+            agent_id=agent_id,
+            attributes=json.dumps(attributes)
+        )
+
+    def to_config_dict(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary"""
+        attributes = json.loads(self.attributes)
+        result = {"name": self.name}
+        if attributes.get("network"):
+            result["network"] = attributes["network"]
+        if attributes.get("rpc"):
+            result["rpc"] = attributes["rpc"]
+        if attributes.get("private_key"):
+            result["private_key"] = attributes["private_key"]
+        return result

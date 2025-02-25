@@ -14,6 +14,7 @@ from src.server.app import ActionRequest
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("matriarch/server")
 
+
 class AgentController:
     def __init__(self, agent: "ZerePyAgent"):
         if agent is None:
@@ -102,11 +103,13 @@ class AgentController:
 
     async def request_action(self, action_request: ActionRequest):
         try:
-            ret = self.agent.perform_action(action_request.connection, action_request.action, params=action_request.params)
+            ret = self.agent.perform_action(action_request.connection, action_request.action,
+                                            params=action_request.params)
             return ret
         except Exception as e:
             logger.error(f"Couldn't run action {action_request.action} with agent {self.agent.name}: {e}")
             raise Exception(f"Couldn't run action {action_request.action} with agent {self.agent.name}: {e}")
+
 
 class ServerState:
     def __init__(self, config_dir: str = "agents"):

@@ -2,8 +2,7 @@ import os
 import logging
 from sqlmodel import SQLModel, Session, create_engine, select
 from typing import List, Optional, Dict, Any, Type, TypeVar, Generic
-from .models import Agent, ConfigBase, Task, TwitterConfig, OpenAIConfig, AnthropicConfig, DiscordConfig, NetworkConfig, \
-    FarcasterConfig
+from .models import Agent, ConfigBase, Task
 from pathlib import Path
 
 logger = logging.getLogger("database.manager")
@@ -51,11 +50,43 @@ class DatabaseManager:
         agent = Agent.from_dict(agent_dict)
 
         with self.get_session() as session:
-            session.add(agent)
-            session.commit()
-            session.refresh(agent, attribute_names=["configs", "tasks"])
-            logger.info(f"Added agent {agent.name} (ID: {agent.id}) to database")
-        return agent
+            try:
+                # Add the agent first to get an ID
+                session.add(agent)
+                session.commit()
+                session.refresh(agent)
+
+                agent_id = agent.id
+
+                # Now add configs
+                configs_data = agent_dict.get("configs", agent_dict.get("config", []))
+                for config_data in configs_data:
+                    config = ConfigBase.from_dict(config_data, agent_id)
+                    session.add(config)
+
+                # Add tasks
+                tasks_data = agent_dict.get("tasks", [])
+                for task_data in tasks_data:
+                    task = Task(**task_data)
+                    task.agent_id = agent_id
+                    session.add(task)
+
+                session.commit()
+                session.refresh(agent)
+                logger.info(f"Added agent {agent.name} (ID: {agent.id}) to database")
+
+                if agent:
+                    # Load relationships
+                    _ = agent.configs
+                    _ = agent.tasks
+                return agent
+
+
+            except Exception as e:
+                logger.error(f"Error adding agent: {e}")
+                session.rollback()
+                raise
+
 
     def update_agent(self, agent_id: int, agent_dict: Dict[str, Any]) -> Optional[Agent]:
         """Update an existing agent in the database
@@ -73,24 +104,9 @@ class DatabaseManager:
                 logger.warning(f"Agent with ID {agent_id} not found")
                 return None
 
-            # If we're providing a complete agent, use from_dict
-            if all(k in agent_dict for k in ["name", "bio", "traits"]):
-                # First delete the old agent
-                session.delete(agent)
-                session.commit()
-
-                # Then create a new one with the same ID
-                agent_dict["id"] = agent_id
-                new_agent = Agent.from_dict(agent_dict)
-                session.add(new_agent)
-                session.commit()
-                session.refresh(new_agent)
-                return new_agent
-
-            # Otherwise do a partial update
             # Update scalar fields
             for key, value in agent_dict.items():
-                if key not in ["id", "configs", "tasks", "created_at"]:
+                if key not in ["id", "configs", "config", "tasks", "created_at"]:
                     if key in ["bio", "traits", "examples", "example_accounts", "time_based_multipliers"]:
                         import json
                         if not isinstance(value, str):
@@ -110,20 +126,7 @@ class DatabaseManager:
 
                 # Add new configs
                 for config_data in configs_data:
-                    config_type = config_data.get("name")
-                    if config_type == "twitter":
-                        config = TwitterConfig(**config_data)
-                    elif config_type == "openai":
-                        config = OpenAIConfig(**config_data)
-                    elif config_type == "anthropic":
-                        config = AnthropicConfig(**config_data)
-                    elif config_type == "discord":
-                        config = DiscordConfig(**config_data)
-                    elif config_type == "farcaster":
-                        config = FarcasterConfig(**config_data)
-                    else:
-                        config = ConfigBase(**config_data)
-                    config.agent_id = agent_id
+                    config = ConfigBase.from_dict(config_data, agent_id)
                     session.add(config)
 
             # Update tasks if provided
