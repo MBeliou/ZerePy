@@ -63,7 +63,7 @@ def create_zerepy_agent_from_db(agent: Agent) -> ZerePyAgent:
 
     # Create the ZerePyAgent from the temporary file
     try:
-        zerepy_agent = ZerePyAgent(agent_file.stem)
+        zerepy_agent = ZerePyAgent(agent_file.stem, temp_dir)
         return zerepy_agent
     except Exception as e:
         logger.error(f"Failed to create ZerePyAgent from database agent: {e}")

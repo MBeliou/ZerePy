@@ -22,10 +22,14 @@ logger = logging.getLogger("agent")
 class ZerePyAgent:
     def __init__(
             self,
-            agent_name: str
+            agent_name: str,
+            path: Optional[str]
     ):
         try:
-            agent_path = Path("agents") / f"{agent_name}.json"
+            if path:
+                agent_path = Path(path) / f"{agent_name}.json"
+            else :
+                agent_path = Path("agents") / f"{agent_name}.json"
             agent_dict = json.load(open(agent_path, "r"))
 
             missing_fields = [field for field in REQUIRED_FIELDS if field not in agent_dict]
