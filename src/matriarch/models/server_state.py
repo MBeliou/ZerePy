@@ -162,7 +162,6 @@ class AgentController:
             while not self._stop_event.is_set():
                 try:
                     logger.info(f"Loop iteration for {self.agent.name}")
-                    logger.info(f"Stop event status: {self._stop_event.is_set()}")
 
                     try:
                         await asyncio.wait_for(self._stop_event.wait(), timeout=2.0)
@@ -202,7 +201,7 @@ class AgentController:
         logger.info(f"Initiating stop for agent {self.agent.name}")
 
         async with self._running_lock:
-            if not await self.is_running():  # Changed to method call
+            if not await self.is_running():
                 logger.info(f"Agent {self.agent.name} already stopped")
                 return True
             current_task = self._task
@@ -220,7 +219,7 @@ class AgentController:
                 return False
 
         async with self._running_lock:
-            stopped = not await self.is_running()  # Changed to method call
+            stopped = not await self.is_running()
             if not stopped:
                 logger.error(f"Failed to stop agent {self.agent.name}'s loop")
             else:
