@@ -138,7 +138,7 @@ class ConfigBase(SQLModel, table=True):
             config_data["agent_id"] = agent_id
 
         # Extract name and config_type
-        name = config_data.pop("name", "base")
+        name = config_data.get("name", "base")
         config_type = name  # Use name as config_type
 
         # Create a new instance of the appropriate config class
@@ -320,9 +320,8 @@ class NetworkConfig:
             "rpc": data.get("rpc"),
             "private_key": data.get("private_key")
         }
-
         return ConfigBase(
-            name=data.get("network", "network"),
+            name=data.get("name", "network"),
             config_type="network",
             agent_id=agent_id,
             attributes=json.dumps(attributes)

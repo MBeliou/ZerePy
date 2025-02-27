@@ -138,8 +138,8 @@ class ServerState:
             agent = db_manager.get_agent_by_id(agent_id_int)
         except ValueError:
             # If not an integer, treat as name
-            safe_name = self._make_safe_agent_name(agent_id)
-            agent = db_manager.get_agent_by_name(safe_name)
+            #             #agent_name = self._make_safe_agent_name(agent_id)
+            agent = db_manager.get_agent_by_name(agent_id)
 
         if agent:
             return agent.to_dict()
@@ -181,8 +181,8 @@ class ServerState:
             agent = db_manager.update_agent(agent_id_int, agent_data)
         except ValueError:
             # If not an integer, treat as name
-            safe_name = self._make_safe_agent_name(agent_id)
-            db_agent = db_manager.get_agent_by_name(safe_name)
+            # agent_name = self._make_safe_agent_name(agent_id)
+            db_agent = db_manager.get_agent_by_name(agent_id)
             if db_agent:
                 agent = db_manager.update_agent(db_agent.id, agent_data)
             else:
@@ -207,8 +207,8 @@ class ServerState:
             return db_manager.delete_agent(agent_id_int)
         except ValueError:
             # If not an integer, treat as name
-            safe_name = self._make_safe_agent_name(agent_id)
-            db_agent = db_manager.get_agent_by_name(safe_name)
+            #             agent_name = self._make_safe_agent_name(agent_id)
+            db_agent = db_manager.get_agent_by_name(agent_id)
             if db_agent:
                 return db_manager.delete_agent(db_agent.id)
             return False
@@ -229,41 +229,41 @@ class ServerState:
         logger.info(f"Attempting to start agent: {agent_name}")
 
         # Check if agent exists in database
-        safe_name = self._make_safe_agent_name(agent_name)
-        db_agent = db_manager.get_agent_by_name(safe_name)
+        #         agent_name = self._make_safe_agent_name(agent_name)
+        db_agent = db_manager.get_agent_by_name(agent_name)
 
         if not db_agent:
-            logger.error(f"No agent found with name: {safe_name}")
+            logger.error(f"No agent found with name: {agent_name}")
             return False
 
         # Check if agent is already running
-        agent_loop = self.agent_loops.get(safe_name)
+        agent_loop = self.agent_loops.get(agent_name)
         if agent_loop is not None:
             is_running = await agent_loop.is_running()
             if is_running:
-                logger.info(f"Agent {safe_name} is already running")
+                logger.info(f"Agent {agent_name} is already running")
                 return False
 
         try:
             # Create ZerePyAgent from database agent
             zerepy_agent = create_zerepy_agent_from_db(db_agent)
             controller = AgentController(zerepy_agent)
-            self.agent_loops[safe_name] = controller
+            self.agent_loops[agent_name] = controller
 
-            logger.info(f"Starting agent loop for {safe_name}")
+            logger.info(f"Starting agent loop for {agent_name}")
             await controller.start_agent_loop()
 
-            logger.info(f"Successfully started agent {safe_name}")
+            logger.info(f"Successfully started agent {agent_name}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to start agent {safe_name}: {e}")
+            logger.error(f"Failed to start agent {agent_name}: {e}")
             return False
 
     async def stop_agent(self, agent_name: str) -> bool:
         """Stop a running agent"""
-        safe_name = self._make_safe_agent_name(agent_name)
-        agent_loop = self.agent_loops.get(safe_name)
+        #         agent_name = self._make_safe_agent_name(agent_name)
+        agent_loop = self.agent_loops.get(agent_name)
 
         if agent_loop is not None:
             await agent_loop.stop_agent_loop()
@@ -273,16 +273,16 @@ class ServerState:
 
     async def request_action(self, agent_name: str, action_request: ActionRequest):
         """Request an action from an agent"""
-        safe_name = self._make_safe_agent_name(agent_name)
-        controller = self.agent_loops.get(safe_name)
+        #         agent_name = self._make_safe_agent_name(agent_name)
+        controller = self.agent_loops.get(agent_name)
 
         if controller is not None:
             return await controller.request_action(action_request)
 
         # If agent is not running, try to create it temporarily
-        db_agent = db_manager.get_agent_by_name(safe_name)
+        db_agent = db_manager.get_agent_by_name(agent_name)
         if not db_agent:
-            logger.error(f"No agent found with name: {safe_name}")
+            logger.error(f"No agent found with name: {agent_name}")
             return None
 
         try:

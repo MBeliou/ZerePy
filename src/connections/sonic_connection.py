@@ -315,23 +315,29 @@ class SonicConnection(BaseConnection):
             raise
 
     def perform_action(self, action_name: str, kwargs: Dict[str, Any]) -> Any:
-        """Execute a Sonic action with validation"""
-        if action_name not in self.actions:
-            raise KeyError(f"Unknown action: {action_name}")
+        try:
+            """Execute a Sonic action with validation"""
+            if action_name not in self.actions:
+                raise KeyError(f"Unknown action: {action_name}")
 
-        load_dotenv()
+            load_dotenv()
 
-        if not self.is_configured(verbose=True):
-            raise SonicConnectionError("Sonic is not properly configured")
+            if not self.is_configured(verbose=True):
+                raise SonicConnectionError("Sonic is not properly configured")
 
-        action = self.actions[action_name]
-        errors = action.validate_params(kwargs)
-        if errors:
-            raise ValueError(f"Invalid parameters: {', '.join(errors)}")
+            action = self.actions[action_name]
+            errors = action.validate_params(kwargs)
+            if errors:
+                raise ValueError(f"Invalid parameters: {', '.join(errors)}")
 
-        method_name = action_name.replace('-', '_')
-        method = getattr(self, method_name)
-        return method(**kwargs)
+            method_name = action_name.replace('-', '_')
+            method = getattr(self, method_name)
+
+            logger.info(f"running {method_name} with {kwargs}")
+            return method(**kwargs)
+        except Exception as e:
+            logger.info(f"Failed running {action_name} with {kwargs}")
+            raise e
 
     # sonic_connection.py
     def __init__(self, config: Dict[str, Any]):

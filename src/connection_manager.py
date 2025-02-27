@@ -164,6 +164,7 @@ class ConnectionManager:
             self, connection_name: str, action_name: str, params: List[Any]
     ) -> Optional[Any]:
         """Perform an action on a specific connection with given parameters"""
+        logging.info(f"{connection_name} - {self.connections} {action_name} {params}")
         try:
             connection = self.connections[connection_name]
 

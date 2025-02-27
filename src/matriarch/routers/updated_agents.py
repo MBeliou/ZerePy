@@ -198,8 +198,8 @@ async def get_agent_status(
             detail=f"Agent {agent_name} not found"
         )
 
-    safe_name = server_state._make_safe_agent_name(agent_name)
-    agent_loop = server_state.agent_loops.get(safe_name)
+    #safe_name = server_state._make_safe_agent_name(agent_name)
+    agent_loop = server_state.agent_loops.get(agent_name)
 
     if agent_loop:
         is_running = await agent_loop.is_running()
