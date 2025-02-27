@@ -1,6 +1,8 @@
-import time,random
+import time, random
 from src.action_handler import register_action
-from src.prompts import REPLY_ECHOCHAMBER_PROMPT, POST_ECHOCHAMBER_PROMPT
+from src.prompts.echochamber import ECHOCHAMBER_REPLY_USER_PROMPT , ECHOCHAMBER_SYSTEM_PROMPT, ECHOCHAMBER_POST_USER_PROMPT
+#from src.prompts import REPLY_ECHOCHAMBER_PROMPT, POST_ECHOCHAMBER_PROMPT
+
 
 @register_action("post-echochambers")
 def post_echochambers(agent, **kwargs):
@@ -11,22 +13,29 @@ def post_echochambers(agent, **kwargs):
         agent.state["echochambers_last_message"] = 0
     if "echochambers_replied_messages" not in agent.state:
         agent.state["echochambers_replied_messages"] = set()
-    
+
     if current_time - agent.state["echochambers_last_message"] > agent.echochambers_message_interval:
         agent.logger.info("\n📝 GENERATING NEW ECHOCHAMBERS MESSAGE")
-        
+
+
         # Generate message based on room topic and tags
         previous_messages = agent.connection_manager.connections["echochambers"].sent_messages
         previous_content = "\n".join([f"- {msg['content']}" for msg in previous_messages])
         agent.logger.info(f"Found {len(previous_messages)} messages in post history")
-        
-        prompt  = POST_ECHOCHAMBER_PROMPT.format(
+
+        system_prompt = ECHOCHAMBER_SYSTEM_PROMPT.format(
+            agent_name=agent.name,
+            agent_traits=", ".join(agent.traits),
+            agent_bio=agent.bio
+        )
+        user_prompt = ECHOCHAMBER_POST_USER_PROMPT.format(
             room_topic=agent.state['room_info']['topic'],
             tags=", ".join(agent.state['room_info']['tags']),
-            previous_content=previous_content
+            previous_content=previous_content,
         )
-        message = agent.prompt_llm(prompt)
-        
+
+        message = agent.prompt_llm(user_prompt, system_prompt)
+
         if message:
             agent.logger.info(f"\n🚀 Posting message: '{message[:69]}...'")
             agent.connection_manager.perform_action(
@@ -39,14 +48,14 @@ def post_echochambers(agent, **kwargs):
             return True
     return False
 
+
 @register_action("reply-echochambers")
 def reply_echochambers(agent, **kwargs):
     agent.logger.info("\n🔍 CHECKING FOR MESSAGES TO REPLY TO")
-    
+
     # Initialize replied messages set if not exists
     if "echochambers_replied_messages" not in agent.state:
         agent.state["echochambers_replied_messages"] = set()
-        
 
     # Get recent messages
     history = agent.connection_manager.perform_action(
@@ -62,33 +71,39 @@ def reply_echochambers(agent, **kwargs):
             sender = message.get('sender', {})
             sender_username = sender.get('username')
             content = message.get('content', '')
-            
+
             if not message_id or not sender_username or not content:
                 agent.logger.warning(f"Skipping message with missing fields: {message}")
                 continue
-            
 
             # Skip if:
             # 1. It's our message
             # 2. We've already replied to it
-            if (sender_username == agent.connection_manager.connections["echochambers"].config["sender_username"] or 
-                message_id in agent.state.get("echochambers_replied_messages", set())):
+            if (sender_username == agent.connection_manager.connections["echochambers"].config["sender_username"] or
+                    message_id in agent.state.get("echochambers_replied_messages", set())):
                 agent.logger.info(f"Skipping message from {sender_username} (already replied or own message)")
                 continue
-                
+
             agent.logger.info(f"\n💬 GENERATING REPLY to: @{sender_username} - {content[:69]}...")
-            
+
             refer_username = random.random() < 0.7
             username_prompt = f"Refer the sender by their @{sender_username}" if refer_username else "Respond without directly referring to the sender"
-            prompt = REPLY_ECHOCHAMBER_PROMPT.format(
+
+            user_prompt = ECHOCHAMBER_REPLY_USER_PROMPT.format(
                 content=content,
                 sender_username=sender_username,
                 room_topic=agent.state['room_info']['topic'],
                 tags=", ".join(agent.state['room_info']['tags']),
-                username_prompt=username_prompt
+                agent_name=agent.name
             )
-            reply = agent.prompt_llm(prompt)
-            
+            system_prompt = ECHOCHAMBER_SYSTEM_PROMPT.format(
+                agent_name=agent.name,
+                agent_traits=", ".join(agent.traits),
+                agent_bio=agent.bio
+            )
+
+            reply = agent.prompt_llm(f"{username_prompt}. {user_prompt}", system_prompt)
+
             if reply:
                 agent.logger.info(f"\n🚀 Posting reply: '{reply[:69]}...'")
                 agent.connection_manager.perform_action(

@@ -1,7 +1,7 @@
 import time 
 from src.action_handler import register_action
 from src.helpers import print_h_bar
-from src.prompts import POST_TWEET_PROMPT, REPLY_TWEET_PROMPT
+from src.prompts.twitter import POST_TWEET_PROMPT, REPLY_TWEET_PROMPT
 
 
 @register_action("post-tweet")
