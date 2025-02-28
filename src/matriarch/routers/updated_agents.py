@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional
 from src.matriarch.dependencies.dependencies import get_server_state
 from src.matriarch.models.updated_server_state import ServerState
 from src.matriarch.schemas import AgentResponse, AgentCreate, AgentUpdate, ActionRequest, StatusResponse, \
-    RunningStatusResponse, ActionResponse
+    RunningStatusResponse, ActionResponse, AgentActionsResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("matriarch/agents")
@@ -160,7 +160,7 @@ async def stop_agent(
         )
 
 
-@router.get("/{agent_name}/actions")
+@router.get("/{agent_name}/actions", response_model=AgentActionsResponse)
 async def get_actions(
         agent_name: str,
         server_state: ServerState = Depends(get_server_state)

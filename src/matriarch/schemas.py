@@ -143,6 +143,24 @@ class ActionRequest(BaseModel):
     params: List[Any] = []
 
 
+class ActionParameter(BaseModel):
+    name: str
+    required: bool
+    type: str
+    description: str
+
+
+class Action(BaseModel):
+    name: str
+    parameters: List[ActionParameter]
+    description: str
+
+
+class AgentActionsResponse(BaseModel):
+    status: str
+    response: Dict[str, Dict[str,  Action]]
+
+
 # Status responses
 class StatusResponse(BaseModel):
     status: str
