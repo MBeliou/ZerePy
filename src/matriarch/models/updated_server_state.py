@@ -213,6 +213,32 @@ class ServerState:
                 return db_manager.delete_agent(db_agent.id)
             return False
 
+    def get_agent_actions(self, agent_id: str):
+        """Gets the available actions from an active agent"""
+        agent = self.agent_loops.get(agent_id)
+        if not agent:
+            # Agent is not running. Feels like we should be returning something more meaningful here
+            return None
+        agent_connections = agent.agent.connection_manager.connections
+
+        #actions = [agent_connections.get(connection).actions for connection in agent_connections]
+        #logger.info(actions)
+        all_actions = []
+
+        for connection in agent_connections:
+            actions= agent_connections.get(connection).actions
+            connection_actions = {}
+            # logger.info(actions)
+            for action in actions:
+                connection_actions[action] = actions.get(action).to_dict()
+            all_actions.append(connection_actions)
+
+        return all_actions
+
+    def is_agent_running(self, agent_id: str)-> bool:
+        agent = self.agent_loops.get(agent_id)
+        return agent is not None
+
     def _import_legacy_agents(self):
         """Import legacy agents from the config directory"""
         if self.config_dir.exists():

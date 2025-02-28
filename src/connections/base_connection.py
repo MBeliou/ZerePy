@@ -10,6 +10,14 @@ class ActionParameter:
     type: type
     description: str
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "type": self.type.__name__,
+            "required": self.required,
+            "description": self.description
+        }
+
 @dataclass
 class Action:
     name: str
@@ -28,11 +36,19 @@ class Action:
                     errors.append(f"Invalid type for {param.name}. Expected {param.type.__name__}")
         return errors
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the Action to a dictionary for JSON serialization."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": [param.to_dict() for param in self.parameters]
+        }
+
 class BaseConnection(ABC):
     def __init__(self, config):
         try:
             # Dictionary to store action name -> handler method mapping
-            self.actions: Dict[str, Callable] = {}
+            self.actions: Dict[str, Action] = {}
             # Dictionary to store some essential configuration
             self.config = self.validate_config(config) 
             # Register actions during initialization

@@ -160,6 +160,28 @@ async def stop_agent(
         )
 
 
+@router.get("/{agent_name}/actions")
+async def get_actions(
+        agent_name: str,
+        server_state: ServerState = Depends(get_server_state)
+):
+    if not server_state.get_agent(agent_name):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Agent {agent_name} not found"
+        )
+    if not server_state.is_agent_running(agent_name):
+        raise HTTPException(
+            status_code=status.HTTP_204_NO_CONTENT,
+            detail=f"Agent {agent_name} is not running"
+        )
+    response = server_state.get_agent_actions(agent_name)
+    return {
+        "status": "success",
+        "response": response
+    }
+
+
 @router.post("/{agent_name}/action", response_model=ActionResponse)
 async def request_action(
         agent_name: str,
@@ -198,7 +220,7 @@ async def get_agent_status(
             detail=f"Agent {agent_name} not found"
         )
 
-    #safe_name = server_state._make_safe_agent_name(agent_name)
+    # safe_name = server_state._make_safe_agent_name(agent_name)
     agent_loop = server_state.agent_loops.get(agent_name)
 
     if agent_loop:
