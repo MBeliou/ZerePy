@@ -221,17 +221,15 @@ class ServerState:
             return None
         agent_connections = agent.agent.connection_manager.connections
 
-        #actions = [agent_connections.get(connection).actions for connection in agent_connections]
-        #logger.info(actions)
-        all_actions = []
+        all_actions = {}
 
         for connection in agent_connections:
             actions= agent_connections.get(connection).actions
             connection_actions = {}
-            # logger.info(actions)
             for action in actions:
                 connection_actions[action] = actions.get(action).to_dict()
-            all_actions.append(connection_actions)
+
+            all_actions[connection] = connection_actions
 
         return all_actions
 

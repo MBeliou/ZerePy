@@ -172,7 +172,7 @@ async def get_actions(
         )
     if not server_state.is_agent_running(agent_name):
         raise HTTPException(
-            status_code=status.HTTP_204_NO_CONTENT,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Agent {agent_name} is not running"
         )
     response = server_state.get_agent_actions(agent_name)
