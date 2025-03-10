@@ -6,6 +6,7 @@ from collections import deque
 import requests
 from dotenv import load_dotenv
 from src.connections.base_connection import BaseConnection, Action, ActionParameter
+from src.prompts.echochamber import ECHOCHAMBER_SYSTEM_PROMPT, ECHOCHAMBER_POST_USER_PROMPT, ECHOCHAMBER_REPLY_USER_PROMPT
 
 logger = logging.getLogger("connections.echochambers_connection")
 

@@ -1,151 +1,25 @@
 import json
 import threading
 import time
-from pathlib import Path
-
-from typing import Dict, List, Optional, final, IO
-import logging
-
 import asyncio
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional, Any
 
 from src.agent import ZerePyAgent
-from src.matriarch.models.configuration import AgentConfig
+from src.database.manager import db_manager
+from src.database.utils import create_zerepy_agent_from_db
 from src.server.app import ActionRequest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("matriarch/server")
 
 
-class ServerState:
-    def __init__(self, config_dir: str = "agents"):
-        self.config_dir = Path(config_dir)
-        self.config_dir.mkdir(exist_ok=True)
-        logger.info(f"Config directory is located: {self.config_dir}")
-
-        self.agent_configs: Dict[str, AgentConfig] = self._load_agents()
-        self.agent_loops: Dict[str, Optional[AgentController]] = {}
-
-    def _load_agents(self):
-        agents = {}
-        for config_file in filter(lambda x: x.stem != "general", self.config_dir.glob("*.json")):
-            try:
-                with open(config_file, "r") as f:
-                    config_data = json.load(f)
-                    # print(config_data)
-                    agent_config = AgentConfig(**config_data)
-
-                    agents[self._make_safe_agent_name(config_data["name"])] = agent_config
-
-            except Exception as e:
-                logger.error(f"Error loading {config_file}: {e}")
-
-        return agents
-
-    def _save_agent_config(self, config: AgentConfig):
-        exists = any(f"{config.name}.json" for f in self.config_dir.glob("*.json"))
-
-    def add_agent(self, agent: AgentConfig):
-        safe_name = self._make_safe_agent_name(agent.name)
-        config_path = self._make_agent_file_path(safe_name)
-        with open(config_path, "w") as f:
-            json.dump(agent.model_dump(), f, indent=2)
-
-        self.agent_configs[safe_name] = agent
-
-    def get_agent(self, agent_id: str) -> Optional[AgentConfig]:
-        safe_name = self._make_safe_agent_name(agent_id)
-        return self.agent_configs.get(safe_name)
-
-    def get_all_agents(self) -> List[AgentConfig]:
-        return list(self.agent_configs.values())
-
-    def delete_agent(self, agent_name: str) -> bool:
-        agent_config = self.agent_configs.get(agent_name)
-        if agent_config is None:
-            return False
-
-        agent_controller = self.agent_loops.get(agent_name)
-        if agent_controller is None:
-            return False
-
-        # Stop loop then delete agent
-        agent_controller.stop_agent_loop()
-        del self.agent_loops[agent_name]
-
-        config_path = self._make_agent_file_path(agent_name)
-        if config_path.exists():
-            config_path.unlink()
-
-        return True
-
-    @staticmethod
-    def _make_safe_agent_name(agent_name: str):
-        return agent_name.replace(' ', '_').lower()
-
-    @staticmethod
-    def _make_agent_file_name(agent_name: str):
-        return f"{ServerState._make_safe_agent_name(agent_name)}.json"
-
-    def _make_agent_file_path(self, agent_name: str):
-        return self.config_dir / self._make_agent_file_name(agent_name)
-
-    async def start_agent(self, agent_name: str) -> bool:
-        logger.info(f"Attempting to start agent: {agent_name}")
-
-        # Make sure agent config actually exists
-        safe_name = self._make_safe_agent_name(agent_name)
-        agent = self.agent_configs.get(safe_name)
-        if agent is None:
-            logger.error(f"No config found for agent: {safe_name}")
-            return False
-
-        # Make sure it isn't already running
-        agent_loop = self.agent_loops.get(safe_name)
-        if agent_loop is not None:
-            is_running = await agent_loop.is_running()
-            if is_running:
-                logger.info(f"Agent {safe_name} is already running")
-                return False
-
-        try:
-            logger.info(f"Creating new agent and controller for {safe_name}")
-            agent = ZerePyAgent(agent_name)
-            controller = AgentController(agent)
-            self.agent_loops[safe_name] = controller
-
-            logger.info(f"Starting agent loop for {safe_name}")
-            await controller.start_agent_loop()
-
-            logger.info(f"Successfully started agent {safe_name}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Couldn't start agent loop for {safe_name}: {e}", exc_info=True)
-            return False
-
-    async def stop_agent(self, agent_name: str) -> bool:
-        safe_name = self._make_safe_agent_name(agent_name)
-        agent_loop = self.agent_loops.get(safe_name)
-
-        if agent_loop is not None:
-            await agent_loop.stop_agent_loop()
-            return True
-
-        return True
-
-    async def request_action(self, agent_name: str, action_request: ActionRequest):
-        safe_name = self._make_safe_agent_name(agent_name)
-        controller = self.agent_loops.get(safe_name)
-        if controller is not None:
-            return await controller.request_action(action_request)
-
-        return None
-
 class AgentController:
     def __init__(self, agent: "ZerePyAgent"):
         if agent is None:
             raise ValueError("Agent cannot be None")
-        self.agent: final = agent
+        self.agent: ZerePyAgent = agent
 
         self._stop_event = asyncio.Event()
         self._task: Optional[asyncio.Task] = None
@@ -202,7 +76,7 @@ class AgentController:
         logger.info(f"Initiating stop for agent {self.agent.name}")
 
         async with self._running_lock:
-            if not await self.is_running():  # Changed to method call
+            if not await self.is_running():
                 logger.info(f"Agent {self.agent.name} already stopped")
                 return True
             current_task = self._task
@@ -220,19 +94,229 @@ class AgentController:
                 return False
 
         async with self._running_lock:
-            stopped = not await self.is_running()  # Changed to method call
+            stopped = not await self.is_running()
             if not stopped:
                 logger.error(f"Failed to stop agent {self.agent.name}'s loop")
             else:
                 logger.info(f"Successfully stopped agent {self.agent.name}")
             return stopped
 
-
     async def request_action(self, action_request: ActionRequest):
         try:
-            #asyncio.create_task()
-            ret = self.agent.perform_action(action_request.connection, action_request.action, params=action_request.params)
+            ret = self.agent.perform_action(action_request.connection, action_request.action,
+                                            params=action_request.params)
             return ret
+        except Exception as e:
+            logger.error(f"Couldn't run action {action_request.action} with agent {self.agent.name}: {e}")
+            raise Exception(f"Couldn't run action {action_request.action} with agent {self.agent.name}: {e}")
+
+
+class ServerState:
+    def __init__(self, config_dir: str = "agents"):
+        self.config_dir = Path(config_dir)
+        self.config_dir.mkdir(exist_ok=True)
+        logger.info(f"Config directory is located: {self.config_dir}")
+
+        # Import legacy agents if they exist
+        self._import_legacy_agents()
+
+        # Track running agent controllers
+        self.agent_loops: Dict[str, Optional[AgentController]] = {}
+
+    def get_agent(self, agent_id: str) -> Optional[dict]:
+        """Get an agent by name or ID
+
+        Args:
+            agent_id: Name or ID of the agent
+
+        Returns:
+            Agent as dictionary or None if not found
+        """
+        try:
+            # Try to parse as integer ID
+            agent_id_int = int(agent_id)
+            agent = db_manager.get_agent_by_id(agent_id_int)
+        except ValueError:
+            # If not an integer, treat as name
+            #             #agent_name = self._make_safe_agent_name(agent_id)
+            agent = db_manager.get_agent_by_name(agent_id)
+
+        if agent:
+            return agent.to_dict()
+        return None
+
+    def get_all_agents(self) -> List[dict]:
+        """Get all agents
+
+        Returns:
+            List of all agents as dictionaries
+        """
+        return [agent.to_dict() for agent in db_manager.get_all_agents()]
+
+    def add_agent(self, agent_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a new agent
+
+        Args:
+            agent_data: Agent data as dictionary
+
+        Returns:
+            The created agent as dictionary
+        """
+        agent = db_manager.add_agent(agent_data)
+        return agent.to_dict()
+
+    def update_agent(self, agent_id: str, agent_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update an existing agent
+
+        Args:
+            agent_id: Name or ID of the agent
+            agent_data: Updated agent data
+
+        Returns:
+            The updated agent as dictionary or None if not found
+        """
+        try:
+            # Try to parse as integer ID
+            agent_id_int = int(agent_id)
+            agent = db_manager.update_agent(agent_id_int, agent_data)
+        except ValueError:
+            # If not an integer, treat as name
+            # agent_name = self._make_safe_agent_name(agent_id)
+            db_agent = db_manager.get_agent_by_name(agent_id)
+            if db_agent:
+                agent = db_manager.update_agent(db_agent.id, agent_data)
+            else:
+                return None
+
+        if agent:
+            return agent.to_dict()
+        return None
+
+    def delete_agent(self, agent_id: str) -> bool:
+        """Delete an agent
+
+        Args:
+            agent_id: Name or ID of the agent
+
+        Returns:
+            True if agent was deleted, False otherwise
+        """
+        try:
+            # Try to parse as integer ID
+            agent_id_int = int(agent_id)
+            return db_manager.delete_agent(agent_id_int)
+        except ValueError:
+            # If not an integer, treat as name
+            #             agent_name = self._make_safe_agent_name(agent_id)
+            db_agent = db_manager.get_agent_by_name(agent_id)
+            if db_agent:
+                return db_manager.delete_agent(db_agent.id)
+            return False
+
+    def get_agent_actions(self, agent_id: str):
+        """Gets the available actions from an active agent"""
+        agent = self.agent_loops.get(agent_id)
+        if not agent:
+            # Agent is not running. Feels like we should be returning something more meaningful here
+            return None
+        agent_connections = agent.agent.connection_manager.connections
+
+        all_actions = {}
+
+        for connection in agent_connections:
+            actions= agent_connections.get(connection).actions
+            connection_actions = {}
+            for action in actions:
+                connection_actions[action] = actions.get(action).to_dict()
+
+            all_actions[connection] = connection_actions
+
+        return all_actions
+
+    def is_agent_running(self, agent_id: str)-> bool:
+        agent = self.agent_loops.get(agent_id)
+        return agent is not None
+
+    def _import_legacy_agents(self):
+        """Import legacy agents from the config directory"""
+        if self.config_dir.exists():
+            logger.info(f"Importing legacy agents from {self.config_dir}")
+            imported = db_manager.import_legacy_agents(self.config_dir)
+            logger.info(f"Imported {len(imported)} legacy agents")
+
+    def _make_safe_agent_name(self, agent_name: str) -> str:
+        """Create a safe agent name for file storage"""
+        return agent_name.replace(' ', '_').lower()
+
+    async def start_agent(self, agent_name: str) -> bool:
+        """Start an agent loop"""
+        logger.info(f"Attempting to start agent: {agent_name}")
+
+        # Check if agent exists in database
+        #         agent_name = self._make_safe_agent_name(agent_name)
+        db_agent = db_manager.get_agent_by_name(agent_name)
+
+        if not db_agent:
+            logger.error(f"No agent found with name: {agent_name}")
+            return False
+
+        # Check if agent is already running
+        agent_loop = self.agent_loops.get(agent_name)
+        if agent_loop is not None:
+            is_running = await agent_loop.is_running()
+            if is_running:
+                logger.info(f"Agent {agent_name} is already running")
+                return False
+
+        try:
+            # Create ZerePyAgent from database agent
+            zerepy_agent = create_zerepy_agent_from_db(db_agent)
+            controller = AgentController(zerepy_agent)
+            self.agent_loops[agent_name] = controller
+
+            logger.info(f"Starting agent loop for {agent_name}")
+            await controller.start_agent_loop()
+
+            logger.info(f"Successfully started agent {agent_name}")
+            return True
 
         except Exception as e:
-            raise f"Couldn't run action {action_request.action} with agent {self.agent.name}: {e}"
+            logger.error(f"Failed to start agent {agent_name}: {e}")
+            return False
+
+    async def stop_agent(self, agent_name: str) -> bool:
+        """Stop a running agent"""
+        #         agent_name = self._make_safe_agent_name(agent_name)
+        agent_loop = self.agent_loops.get(agent_name)
+
+        if agent_loop is not None:
+            await agent_loop.stop_agent_loop()
+            return True
+
+        return True
+
+    async def request_action(self, agent_name: str, action_request: ActionRequest):
+        """Request an action from an agent"""
+        #         agent_name = self._make_safe_agent_name(agent_name)
+        controller = self.agent_loops.get(agent_name)
+
+        if controller is not None:
+            return await controller.request_action(action_request)
+
+        # If agent is not running, try to create it temporarily
+        db_agent = db_manager.get_agent_by_name(agent_name)
+        if not db_agent:
+            logger.error(f"No agent found with name: {agent_name}")
+            return None
+
+        try:
+            # Create ZerePyAgent from database agent
+            zerepy_agent = create_zerepy_agent_from_db(db_agent)
+            return zerepy_agent.perform_action(
+                action_request.connection,
+                action_request.action,
+                params=action_request.params
+            )
+        except Exception as e:
+            logger.error(f"Failed to perform action: {e}")
+            return None
