@@ -106,6 +106,12 @@ class SonicConnection(BaseConnection):
                 ],
                 description="Get $S or token balance"
             ),
+
+            "get-address": Action(
+                name="get-address",
+                parameters=[],
+                description="Get your Sonic wallet address"
+            ),
             "transfer": Action(
                 name="transfer",
                 parameters=[
@@ -163,7 +169,7 @@ class SonicConnection(BaseConnection):
     def transfer(self, to_address: str, amount: float, token_address: Optional[str] = None) -> str:
         """Transfer $S or tokens to an address"""
         try:
-            #private_key = os.getenv('SONIC_PRIVATE_KEY')
+            # private_key = os.getenv('SONIC_PRIVATE_KEY')
             account = self._web3.eth.account.from_key(self.private_key)
             chain_id = self._web3.eth.chain_id
 
@@ -361,6 +367,13 @@ class SonicConnection(BaseConnection):
         self.ERC20_ABI = ERC20_ABI
         self.NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
         self.aggregator_api = "https://aggregator-api.kyberswap.com/sonic/api/v1"
+
+    def get_address(self) -> str:
+        try:
+            account = self._web3.eth.account.from_key(self.private_key)
+            return f"Your Ethereum address: {account.address}"
+        except Exception as e:
+            return f"Failed to get address: {str(e)}"
 
     def is_configured(self, verbose: bool = False) -> bool:
         try:
